@@ -1,0 +1,211 @@
+import { useState } from "react";
+import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { fmt, get } from "./api.js";
+import { Info } from "./Info.jsx";
+import { clientLabel } from "./Topology.jsx";
+
+const COLORS = ["#0078d4", "#ca5010", "#8764b8", "#107c10", "#c239b3", "#038387"];
+const AXIS = { stroke: "#c8c6c4", tick: { fill: "#605e5c", fontSize: 11 } };
+const GRID = { stroke: "#edebe9", vertical: false };
+const TIP = { contentStyle: { background: "#fff", border: "1px solid #e1dfdd", borderRadius: 2, fontSize: 12, boxShadow: "0 3.2px 7.2px rgba(0,0,0,.13)" }, labelStyle: { color: "#605e5c" } };
+const NO_CLIENT_DATA = "Cần dữ liệu theo từng client ở mỗi vòng (đã có trong kế hoạch API).";
+export const STATUS_VI = { running: "Đang chạy", done: "Hoàn tất", failed: "Lỗi" };
+const kb = (b) => (b == null ? "–" : (b / 1024).toFixed(1));
+const Note = ({ children }) => <div className="note">{children}</div>;
+const roundLabel = (r) => `Vòng ${r}`;
+
+const historyRows = (run) =>
+  run?.history?.round.map((r, i) => ({ round: r, f1: run.history.global_f1[i], loss: run.history.global_loss[i] })) ?? [];
+
+// one row per round, one key per client: {round, client_0: v, ...}
+function perClientRows(clients, field) {
+  const byRound = {};
+  for (const c of clients) for (const r of c.rounds ?? []) (byRound[r.round] ??= { round: r.round })[c.name] = r[field];
+  return Object.values(byRound).sort((a, b) => a.round - b.round);
+}
+
+// round ticks at a "nice" step (1, 2, 5, 10, …) so 25 rounds reads 0, 5, 10, … 25
+export function roundTicks(n) {
+  const step = [1, 2, 5, 10, 20, 50, 100].find((s) => n / s <= 6) ?? 100;
+  const t = [];
+  for (let i = 0; i <= n; i += step) t.push(i);
+  if (t.at(-1) !== n) t.push(n);
+  return t;
+}
+
+// y range that fits the data (and baseline) instead of always 0–1, snapped to 0.05
+function f1Domain(values) {
+  const lo = Math.max(0, Math.floor((Math.min(...values) - 0.02) * 20) / 20);
+  const step = 1 - lo > 0.5 ? 0.25 : 1 - lo > 0.2 ? 0.1 : 0.05;
+  const ticks = [];
+  for (let v = 1; v >= lo - 1e-9; v -= step) ticks.unshift(+v.toFixed(2));
+  return { domain: [ticks[0], 1], ticks };
+}
+
+const LegendItem = ({ dashed, color, children }) => (
+  <span className="legend-item"><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={color} strokeWidth="2" strokeDasharray={dashed ? "4 3" : undefined} /></svg>{children}</span>
+);
+
+// global F1 per round up to `upTo`, with the best local-only model as a dashed baseline
+export function F1Chart({ run, upTo = Infinity, bestLocal, height = 240 }) {
+  if (!run?.history) return <Note>Chọn một lượt chạy học liên kết (FL) để xem các vòng.</Note>;
+  const all = historyRows(run);
+  const data = all.filter((d) => d.round <= upTo);
+  // range from the whole run, so the axis doesn't jump while rounds replay
+  const y = f1Domain([...all.map((d) => d.f1), ...(bestLocal != null ? [bestLocal] : [])]);
+  const rounds = run.config.rounds || 1;
+  return (
+    <>
+      <div className="chart-legend">
+        <LegendItem color="#0078d4">F1 của FedAvg</LegendItem>
+        {bestLocal != null && <LegendItem dashed color="#8a8886">Mô hình cục bộ tốt nhất ({fmt(bestLocal)})</LegendItem>}
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 14 }}>
+          <CartesianGrid {...GRID} />
+          <XAxis dataKey="round" type="number" domain={[0, rounds]} ticks={roundTicks(rounds)} {...AXIS}
+            label={{ value: "Vòng", position: "insideBottom", offset: -8, fill: "#605e5c", fontSize: 11 }} />
+          <YAxis domain={y.domain} ticks={y.ticks} allowDataOverflow tickFormatter={(v) => v.toFixed(2)} width={44} {...AXIS}
+            label={{ value: "F1", angle: -90, position: "insideLeft", offset: 8, fill: "#605e5c", fontSize: 11 }} />
+          <Tooltip formatter={(v) => fmt(v)} labelFormatter={roundLabel} {...TIP} />
+          {bestLocal != null && <ReferenceLine y={bestLocal} stroke="#8a8886" strokeDasharray="4 3" />}
+          <Line dataKey="f1" name="F1 của FedAvg" stroke="#0078d4" strokeWidth={2} isAnimationActive={false}
+            dot={false} activeDot={{ r: 4 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </>
+  );
+}
+
+export function TrafficTable({ clients, shown }) {
+  const hasData = clients.some((c) => c.rounds?.length);
+  return (
+    <>
+      <table>
+        <thead><tr><th /><th className="num">↓ KB</th><th className="num">↑ KB</th></tr></thead>
+        <tbody>
+          {clients.map((c) => {
+            const r = c.rounds?.find((x) => x.round === shown);
+            return <tr key={c.id}><td>Client {c.id} · {c.attack}</td><td className="num">{kb(r?.bytes_down)}</td><td className="num">{kb(r?.bytes_up)}</td></tr>;
+          })}
+        </tbody>
+      </table>
+      {!hasData && <Note>{NO_CLIENT_DATA}</Note>}
+    </>
+  );
+}
+
+export function CompareTable({ compare, clients, run, localRun }) {
+  const cols = compare?.columns ?? [...clients.map((c) => `${c.name}_test`), "global_test"];
+  // without GET /compare we only know each local model's own test + global test, and FedAvg's global test
+  const rows = compare?.rows ?? [
+    ...Object.entries(localRun?.local_metrics ?? {}).map(([name, m]) => ({
+      model: `local ${name}`,
+      f1: cols.map((col) => (col === `${name}_test` ? m.local_test_f1 : col === "global_test" ? m.global_test_f1 : null)),
+    })),
+    ...(run?.history ? [{ model: "fedavg", f1: cols.map((col) => (col === "global_test" ? run.history.global_f1.at(-1) : null)) }] : []),
+  ];
+  const colHead = (col) => {
+    const c = clients.find((x) => `${x.name}_test` === col);
+    if (c) return <>Test client {c.id}<small>{c.attack} <Info text={`Phần test riêng của client ${c.id}: chỉ gồm tấn công ${c.attack} và lưu lượng bình thường của client đó.`} /></small></>;
+    if (col === "global_test") return <>Test chung<small>mọi loại tấn công <Info k="globalTest" /></small></>;
+    return col;
+  };
+  const rowLabel = (m) => (m === "fedavg" ? "FedAvg (trung tâm)" : m.replace(/^local client_/, "Cục bộ client "));
+
+  return (
+    <>
+      <table className="compare">
+        <thead><tr><th>Mô hình</th>{cols.map((c) => <th key={c} className="num">{colHead(c)}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.model} className={r.model === "fedavg" ? "hl" : ""}>
+              <td>{rowLabel(r.model)}</td>{r.f1.map((v, i) => <td key={i} className="num">{fmt(v, 2)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!localRun && <Note>Hãy chạy baseline cục bộ để điền các hàng so sánh.</Note>}
+      {!compare && rows.length > 0 && <Note>Ô “–” cần API GET /compare (đang trong kế hoạch).</Note>}
+      <Note>Mỗi mô hình cục bộ tốt trên loại tấn công của chính nó và yếu với các loại khác. Mô hình liên kết cần tốt trên tất cả.</Note>
+    </>
+  );
+}
+
+export function Convergence({ run }) {
+  const data = historyRows(run);
+  if (!data.length) return <Note>Chọn một lượt chạy học liên kết (FL).</Note>;
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={data}>
+        <CartesianGrid {...GRID} /><XAxis dataKey="round" type="number" domain={[0, data.at(-1).round]} ticks={roundTicks(data.at(-1).round)} {...AXIS} />
+        <YAxis yAxisId="f1" domain={[0, 1]} {...AXIS} /><YAxis yAxisId="loss" orientation="right" tickFormatter={(v) => v.toFixed(2)} {...AXIS} />
+        <Tooltip formatter={(v) => fmt(v)} labelFormatter={roundLabel} {...TIP} /><Legend />
+        <Line yAxisId="f1" dataKey="f1" name="F1 toàn cục" stroke="#0078d4" dot={false} isAnimationActive={false} />
+        <Line yAxisId="loss" dataKey="loss" name="Loss toàn cục" stroke="#ca5010" dot={false} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function PerClient({ clients }) {
+  if (!clients.some((c) => c.rounds?.length)) return <Note>{NO_CLIENT_DATA}</Note>;
+  const chart = (field, title, info, domain) => (
+    <div style={{ flex: 1 }}>
+      <div className="card-title">{title} <Info k={info} /></div>
+      <ResponsiveContainer width="100%" height={220}>
+        <LineChart data={perClientRows(clients, field)}>
+          <CartesianGrid {...GRID} /><XAxis dataKey="round" {...AXIS} /><YAxis domain={domain} {...AXIS} />
+          <Tooltip formatter={(v) => fmt(v)} labelFormatter={roundLabel} {...TIP} /><Legend />
+          {clients.map((c, i) => (
+            <Line key={c.id} dataKey={c.name} name={clientLabel(c)} stroke={COLORS[i % COLORS.length]} dot={false} isAnimationActive={false} />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+  return <div className="row">{chart("val_f1", "F1 validation", "valF1", [0, 1])}{chart("train_loss", "Loss khi train", "trainLoss", ["auto", "auto"])}</div>;
+}
+
+export function CommCost({ clients }) {
+  if (!clients.some((c) => c.rounds?.length)) return <Note>{NO_CLIENT_DATA}</Note>;
+  const sum = (c, k) => c.rounds.reduce((s, r) => s + (r[k] ?? 0), 0);
+  const all = (k) => clients.reduce((s, c) => s + sum(c, k), 0);
+  return (
+    <table>
+      <thead><tr><th>Client</th><th className="num">Số vòng</th><th className="num">Tổng ↓ KB</th><th className="num">Tổng ↑ KB</th></tr></thead>
+      <tbody>
+        {clients.map((c) => (
+          <tr key={c.id}><td>{clientLabel(c)}</td><td className="num">{c.rounds.length}</td><td className="num">{kb(sum(c, "bytes_down"))}</td><td className="num">{kb(sum(c, "bytes_up"))}</td></tr>
+        ))}
+        <tr className="hl"><td>Tất cả client</td><td /><td className="num">{kb(all("bytes_down"))}</td><td className="num">{kb(all("bytes_up"))}</td></tr>
+      </tbody>
+    </table>
+  );
+}
+
+export function RunsTab({ runs, selId, onSelect }) {
+  const [log, setLog] = useState(null);
+  const showLog = (id) => get(`/runs/${id}/log`).then((r) => setLog({ id, text: r?.log ?? "(không có log)" }));
+  const result = (r) =>
+    r.history ? `F1 ${fmt(r.history.global_f1.at(-1))} @ vòng ${r.history.round.at(-1)}`
+      : r.local_metrics ? Object.entries(r.local_metrics).map(([k, v]) => `${k} ${fmt(v.global_test_f1)}`).join(" · ") : "–";
+  return (
+    <>
+      <table>
+        <thead><tr><th>Mã lượt chạy</th><th>Trạng thái</th><th>Cấu hình</th><th>Kết quả</th><th /></tr></thead>
+        <tbody>
+          {runs.map((r) => (
+            <tr key={r.id} className={`click ${r.id === selId ? "hl" : ""}`} onClick={() => onSelect(r.id)}>
+              <td>{r.id}</td><td><span className={`status ${r.status}`}><i />{STATUS_VI[r.status] ?? r.status}</span></td>
+              <td><code>{r.config.kind} · {r.config.kind === "fl" && `${r.config.rounds} vòng · `}{r.config.epochs} epoch · lr {r.config.lr} · batch {r.config.batch_size}</code></td>
+              <td>{result(r)}</td>
+              <td><button className="link" onClick={(e) => { e.stopPropagation(); showLog(r.id); }}>Xem log</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {log && <><div className="card-title" style={{ marginTop: 14 }}>Log · {log.id}</div><pre className="log">{log.text}</pre></>}
+    </>
+  );
+}

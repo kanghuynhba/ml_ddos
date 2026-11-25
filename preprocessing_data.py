@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from config import load_clients
 
 os.makedirs("data", exist_ok=True)
 
@@ -82,15 +83,15 @@ def main() -> None:
 
     # Scale client sizes proportionally if fewer than 42,000 BENIGN rows exist
     usable_benign = min(42_000, len(train_benign))
-    unit = usable_benign // 21
-    n0, n1, n2 = unit * 1, unit * 4, unit * 16
+    cfg = load_clients()
+    unit = usable_benign // sum(c["weight"] for c in cfg)
 
-    # 2. Build 3 Non-IID, Unbalanced Clients (1 : 4 : 16 ratio)
-    client_specs = [
-        ("client_0", "training/Syn.csv", n0, train_benign.iloc[0:n0]),
-        ("client_1", "training/DrDoS_DNS.csv", n1, train_benign.iloc[n0 : n0 + n1]),
-        ("client_2", "training/DrDoS_UDP.csv", n2, train_benign.iloc[n0 + n1 : n0 + n1 + n2]),
-    ]
+    # 2. Build Non-IID, unbalanced clients from clients.json (default 1 : 4 : 16)
+    client_specs, start = [], 0
+    for i, c in enumerate(cfg):
+        n = unit * c["weight"]
+        client_specs.append((f"client_{i}", c["attack_file"], n, train_benign.iloc[start : start + n]))
+        start += n
 
     global_test_parts = []
     all_train_features = []

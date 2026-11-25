@@ -1,0 +1,7 @@
+.venv/
+training/
+testing/
+__pycache__/
+results/
+runs/
+.git/
