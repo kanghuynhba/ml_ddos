@@ -27,7 +27,7 @@ class RunRequest(BaseModel):
     lr: float = Field(1e-3, gt=0, le=1)
     batch_size: int = Field(64, ge=8, le=4096)
     mu: float = Field(0.0, ge=0, le=10)                       # fl only: FedProx weight, 0 = FedAvg
-    weighting: str = Field("samples", pattern="^(samples|uniform)$")  # fl only: aggregation weight per client
+    weighting: str = Field("uniform", pattern="^(samples|uniform)$")  # fl only; uniform = equal vote per client (see experiments/)
     seed: int | None = Field(None, ge=0, le=2**31 - 1)
 
 

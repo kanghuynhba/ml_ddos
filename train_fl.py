@@ -19,7 +19,8 @@ ap.add_argument("--local-epochs", type=int, default=2)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--batch-size", type=int, default=64)
 ap.add_argument("--mu", type=float, default=0.0, help="FedProx proximal weight; 0 = plain FedAvg")
-ap.add_argument("--weighting", choices=["samples", "uniform"], default="samples", help="aggregation weight per client")
+ap.add_argument("--weighting", choices=["samples", "uniform"], default="uniform",
+                help="aggregation weight per client; uniform won the SYN-gap experiment (experiments/syn_gap_results.md)")
 ap.add_argument("--seed", type=int, default=None)
 ARGS = ap.parse_args() if __name__ == "__main__" else ap.parse_args([])
 OUT = ARGS.out

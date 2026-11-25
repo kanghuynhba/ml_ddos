@@ -14,10 +14,10 @@ API = sys.argv[1] if len(sys.argv) > 1 else "http://khang-linux:8000"
 SEEDS = [0, 1, 2]
 BASE = {"kind": "fl", "rounds": 25, "epochs": 2, "lr": 0.001, "batch_size": 64}
 CONFIGS = {
-    "FedAvg (samples, E=2)": {},
+    "FedAvg (samples, E=2)": {"weighting": "samples"},
     "FedAvg (uniform, E=2)": {"weighting": "uniform"},
-    "FedProx mu=0.1 (samples)": {"mu": 0.1},
-    "FedAvg (samples, E=1)": {"epochs": 1},
+    "FedProx mu=0.1 (samples)": {"mu": 0.1, "weighting": "samples"},
+    "FedAvg (samples, E=1)": {"epochs": 1, "weighting": "samples"},
 }
 PARALLEL = 3
 

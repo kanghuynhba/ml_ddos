@@ -5,7 +5,7 @@ A web UI for a lab-report **demo** of federated learning (FL) for DDoS detection
 Goal: someone watching should *see* the idea and *see how well the model works for every client*.
 
 - 3 clients with different attack data (non-IID): Client 0 = SYN flood (1x data), Client 1 = DNS DrDoS (4x), Client 2 = UDP DrDoS (16x).
-- A central server runs FedAvg: it sends the global model to clients, each client trains on its own data, sends back only weights, the server averages them (weighted by sample count).
+- A central server runs FedAvg: it sends the global model to clients, each client trains on its own data, sends back only weights, the server averages them (by default every client gets an equal vote; sample-count weighting is an option, see `experiments/syn_gap_results.md`).
 - Raw traffic never leaves a client. That is the privacy point of the demo.
 - The comparison that matters: **local-only models** (each trained on one client's data) vs the **federated central model**, on each client's test set and on the global test set (which includes attacks a single client never saw).
 
