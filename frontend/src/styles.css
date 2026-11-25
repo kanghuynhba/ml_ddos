@@ -187,3 +187,5 @@ table.cm td.ok { background: var(--green-bg); }
 table.cm td.miss { background: var(--red-bg); }
 .cm-rates { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; font-size: 13px; color: var(--muted); }
 .cm-rates b { color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.card-head { flex-wrap: wrap; gap: 8px 16px; }
+.seg button { white-space: nowrap; }
