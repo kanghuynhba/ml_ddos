@@ -1,5 +1,7 @@
 from collections import OrderedDict
+import argparse
 import json
+import os
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context, ndarrays_to_parameters
 from flwr.server import ServerApp, ServerAppComponents, ServerConfig
@@ -7,11 +9,38 @@ from flwr.server.strategy import FedAvg
 from flwr.simulation import run_simulation
 import matplotlib.pyplot as plt
 import torch
-from model_utils import DDoSMLP, evaluate_model, load_parquet_loader, train_epochs
+import pyarrow.parquet as pq
+from model_utils import ATTACKS, DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, DDoSMLP, evaluate_model, load_parquet_loader, train_epochs
 
-GLOBAL_TEST_LOADER, INPUT_DIM = load_parquet_loader("data/global_test.parquet", batch_size=256)
+ap = argparse.ArgumentParser()
+ap.add_argument("--out", default="results")
+ap.add_argument("--rounds", type=int, default=25)
+ap.add_argument("--local-epochs", type=int, default=2)
+ap.add_argument("--lr", type=float, default=1e-3)
+ap.add_argument("--batch-size", type=int, default=64)
+ARGS = ap.parse_args() if __name__ == "__main__" else ap.parse_args([])
+OUT = ARGS.out
+os.makedirs(OUT, exist_ok=True)
+
+GLOBAL_TEST_LOADER, INPUT_DIM = load_parquet_loader(f"{DATA_DIR}/global_test.parquet", batch_size=256)
 HISTORY = {"round": [], "global_loss": [], "global_f1": []}
-NUM_ROUNDS = 25
+NUM_ROUNDS = ARGS.rounds
+CLIENTS = {
+    i: {
+        "id": i, "name": f"client_{i}", "attack": ATTACKS[i], "model": "MLP",
+        "train_samples": pq.ParquetFile(f"{DATA_DIR}/client_{i}_train.parquet").metadata.num_rows,
+        "rounds": [],
+    }
+    for i in range(NUM_CLIENTS)
+}
+
+
+def dump(name: str, obj) -> None:
+    """Atomic write so the API never reads a half-written file."""
+    tmp = f"{OUT}/{name}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f)
+    os.replace(tmp, f"{OUT}/{name}")
 
 
 def get_weights(model: torch.nn.Module):
@@ -26,23 +55,29 @@ def set_weights(model: torch.nn.Module, parameters):
 
 class DDoSClient(NumPyClient):
     def __init__(self, cid: int):
+        self.cid = cid
         self.model = DDoSMLP(INPUT_DIM)
         self.train_loader, _ = load_parquet_loader(
-            f"data/client_{cid}_train.parquet", batch_size=64, shuffle=True
+            f"{DATA_DIR}/client_{cid}_train.parquet", batch_size=ARGS.batch_size, shuffle=True
         )
         self.val_loader, _ = load_parquet_loader(
-            f"data/client_{cid}_val.parquet", batch_size=256
+            f"{DATA_DIR}/client_{cid}_val.parquet", batch_size=256
         )
 
     def fit(self, parameters, config):
         set_weights(self.model, parameters)
-        train_epochs(self.model, self.train_loader, epochs=2, lr=1e-3)
-        return get_weights(self.model), len(self.train_loader.dataset), {}
+        loss = train_epochs(self.model, self.train_loader, epochs=ARGS.local_epochs, lr=ARGS.lr)
+        new = get_weights(self.model)
+        metrics = {
+            "cid": self.cid, "train_loss": float(loss),
+            "bytes_down": int(sum(p.nbytes for p in parameters)), "bytes_up": int(sum(p.nbytes for p in new)),
+        }
+        return new, len(self.train_loader.dataset), metrics
 
     def evaluate(self, parameters, config):
         set_weights(self.model, parameters)
         loss, f1 = evaluate_model(self.model, self.val_loader)
-        return float(loss), len(self.val_loader.dataset), {"f1": float(f1)}
+        return float(loss), len(self.val_loader.dataset), {"f1": float(f1), "cid": self.cid}
 
 
 def client_fn(context: Context):
@@ -57,19 +92,50 @@ def server_evaluate(server_round: int, parameters, config):
     HISTORY["round"].append(server_round)
     HISTORY["global_loss"].append(loss)
     HISTORY["global_f1"].append(f1)
+    dump("history.json", HISTORY)
     if server_round == NUM_ROUNDS:
-        torch.save(model.state_dict(), "results/fedavg_global_model.pt")
+        torch.save(model.state_dict(), f"{OUT}/fedavg_global_model.pt")
+        f1s = [evaluate_model(model, load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", 256)[0])[1] for i in range(NUM_CLIENTS)]
+        dump("final.json", {"columns": TEST_COLUMNS, "f1": [round(v, 4) for v in f1s + [f1]]})
     return loss, {"global_f1": f1}
+
+
+class RecordingFedAvg(FedAvg):
+    """FedAvg that records per-client metrics and the current phase for the UI."""
+
+    def configure_fit(self, server_round, parameters, client_manager):
+        dump("phase.json", {"round": server_round, "state": "training"})
+        return super().configure_fit(server_round, parameters, client_manager)
+
+    def aggregate_fit(self, server_round, results, failures):
+        for _, res in results:
+            m = res.metrics
+            CLIENTS[int(m["cid"])]["rounds"].append({
+                "round": server_round, "train_loss": m["train_loss"],
+                "bytes_down": int(m["bytes_down"]), "bytes_up": int(m["bytes_up"]),
+                "num_examples": res.num_examples,
+            })
+        dump("phase.json", {"round": server_round, "state": "aggregating"})
+        return super().aggregate_fit(server_round, results, failures)
+
+    def aggregate_evaluate(self, server_round, results, failures):
+        for _, res in results:
+            for r in CLIENTS[int(res.metrics["cid"])]["rounds"]:
+                if r["round"] == server_round:
+                    r["val_f1"] = res.metrics["f1"]
+        dump("clients.json", list(CLIENTS.values()))
+        dump("phase.json", {"round": server_round, "state": "idle"})
+        return super().aggregate_evaluate(server_round, results, failures)
 
 
 def server_fn(context: Context):
     init_model = DDoSMLP(INPUT_DIM)
-    strategy = FedAvg(
+    strategy = RecordingFedAvg(
         fraction_fit=1.0,
         fraction_evaluate=1.0,
-        min_fit_clients=3,
-        min_evaluate_clients=3,
-        min_available_clients=3,
+        min_fit_clients=NUM_CLIENTS,
+        min_evaluate_clients=NUM_CLIENTS,
+        min_available_clients=NUM_CLIENTS,
         initial_parameters=ndarrays_to_parameters(get_weights(init_model)),
         evaluate_fn=server_evaluate,
     )
@@ -80,12 +146,14 @@ if __name__ == "__main__":
     run_simulation(
         server_app=ServerApp(server_fn=server_fn),
         client_app=ClientApp(client_fn=client_fn),
-        num_supernodes=3,
+        num_supernodes=NUM_CLIENTS,
     )
 
-    with open("results/fl_history.json", "w") as f:
+    with open(f"{OUT}/fl_history.json", "w") as f:
         json.dump(HISTORY, f, indent=2)
 
+    if not os.path.exists("results/local_metrics.json"):
+        raise SystemExit(0)
     with open("results/local_metrics.json") as f:
         local_metrics = json.load(f)
 
@@ -104,7 +172,7 @@ if __name__ == "__main__":
         ax2.axhline(
             vals["global_test_f1"],
             linestyle="--",
-            color=colors[i],
+            color=colors[i % len(colors)],
             label=f"{cname} Local-Only F1 ({vals['global_test_f1']:.2f})",
         )
     ax2.set_title("Global Test F1: FedAvg vs. Local-Only")
@@ -115,5 +183,5 @@ if __name__ == "__main__":
     ax2.legend()
 
     plt.tight_layout()
-    plt.savefig("results/fl_vs_local_comparison.png", dpi=200)
-    print("Done! Saved results/fl_vs_local_comparison.png and results/fedavg_global_model.pt")
+    plt.savefig(f"{OUT}/fl_vs_local_comparison.png", dpi=200)
+    print("Done! Saved results to " + OUT + "")

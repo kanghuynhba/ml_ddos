@@ -1,12 +1,20 @@
+import os
+
 import joblib
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from config import load_clients
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader, TensorDataset
 
-SCALER = joblib.load("data/scaler.joblib")
+DATA_DIR = os.environ.get("DATA_DIR", "data")
+CLIENT_CFG = load_clients()  # clients.json
+NUM_CLIENTS = len(CLIENT_CFG)
+ATTACKS = [c["attack"] for c in CLIENT_CFG]
+TEST_COLUMNS = [f"client_{i}_test" for i in range(NUM_CLIENTS)] + ["global_test"]
+SCALER = joblib.load(f"{DATA_DIR}/scaler.joblib")
 
 
 def load_parquet_loader(

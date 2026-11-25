@@ -1,0 +1,112 @@
+"""Job runner API: starts training scripts as subprocesses, exposes status + results."""
+import json
+import os
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from config import load_clients
+
+RUNS = Path(os.environ.get("RUNS_DIR", "/app/runs"))
+RUNS.mkdir(parents=True, exist_ok=True)
+app = FastAPI(title="FL DDoS backend")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # lab network only
+procs: dict[str, subprocess.Popen] = {}
+
+
+class RunRequest(BaseModel):
+    kind: str = Field(pattern="^(fl|local)$")
+    rounds: int = Field(25, ge=1, le=500)          # fl only
+    epochs: int = Field(2, ge=1, le=50)             # fl: local epochs per round; local: total epochs
+    lr: float = Field(1e-3, gt=0, le=1)
+    batch_size: int = Field(64, ge=8, le=4096)
+
+
+def _status(run_id: str) -> str:
+    p = procs.get(run_id)
+    if p is None:  # API restarted: infer from outputs
+        d = RUNS / run_id
+        return "done" if (d / "fl_history.json").exists() or (d / "local_metrics.json").exists() else "failed"
+    rc = p.poll()
+    return "running" if rc is None else ("done" if rc == 0 else "failed")
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.post("/runs")
+def start(req: RunRequest):
+    run_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
+    out = RUNS / run_id
+    out.mkdir()
+    if req.kind == "fl":
+        cmd = [sys.executable, "train_fl.py", "--out", str(out), "--rounds", str(req.rounds),
+               "--local-epochs", str(req.epochs), "--lr", str(req.lr), "--batch-size", str(req.batch_size)]
+    else:
+        cmd = [sys.executable, "train_local.py", "--out", str(out), "--epochs", str(req.epochs),
+               "--lr", str(req.lr), "--batch-size", str(req.batch_size)]
+    (out / "meta.json").write_text(json.dumps({"id": run_id, "config": req.model_dump(), "started": time.time()}))
+    procs[run_id] = subprocess.Popen(cmd, stdout=open(out / "log.txt", "w"), stderr=subprocess.STDOUT)
+    return {"id": run_id}
+
+
+def _load(run_id: str) -> dict:
+    d = RUNS / run_id
+    if not (d / "meta.json").exists():
+        raise HTTPException(404, "no such run")
+    meta = json.loads((d / "meta.json").read_text())
+    meta["status"] = _status(run_id)
+    for name, key in (("history.json", "history"), ("local_metrics.json", "local_metrics"),
+                      ("clients.json", "clients"), ("phase.json", "phase"), ("final.json", "final")):
+        if (d / name).exists():
+            try:
+                meta[key] = json.loads((d / name).read_text())
+            except json.JSONDecodeError:  # file mid-write; next poll gets it
+                pass
+    return meta
+
+
+@app.get("/runs")
+def list_runs():
+    return [_load(p.name) for p in sorted(RUNS.iterdir(), reverse=True) if p.is_dir()]
+
+
+@app.get("/runs/{run_id}")
+def get_run(run_id: str):
+    return _load(run_id)
+
+
+@app.get("/runs/{run_id}/log")
+def get_log(run_id: str):
+    f = RUNS / run_id / "log.txt"
+    if not f.exists():
+        raise HTTPException(404)
+    return {"log": f.read_text()[-8000:]}
+
+
+@app.get("/compare")
+def compare(fl: str, local: str):
+    """Local-only models vs the FedAvg model, F1 on each client's test set and the global test set."""
+    f, l = _load(fl), _load(local)
+    if "final" not in f or "local_metrics" not in l:
+        raise HTTPException(409, "fl run or local run not finished yet")
+    rows = [{"model": f"local {k}", "f1": v["test_f1"]} for k, v in l["local_metrics"].items()]
+    rows.append({"model": "fedavg", "f1": f["final"]["f1"]})
+    return {"columns": f["final"]["columns"], "rows": rows}
+
+
+@app.get("/clients")
+def clients():
+    import pyarrow.parquet as pq
+    data = Path(os.environ.get("DATA_DIR", "/data"))
+    return [{"id": i, "name": f"client_{i}", "attack": c["attack"], "model": "MLP",
+             "train_samples": pq.ParquetFile(data / f"client_{i}_train.parquet").metadata.num_rows}
+            for i, c in enumerate(load_clients())]

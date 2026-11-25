@@ -1,0 +1,133 @@
+<h2>Mockup: animated federated flow (fake numbers)</h2>
+<p class="subtitle">Press Start. Weights go down to clients, clients train on local data, updates go back up, the server averages them.</p>
+
+<style>
+  .fl { font-family: system-ui; }
+  .fl .row { display:flex; gap:16px; margin-bottom:16px; }
+  .fl .panel { background:#fff; border:1px solid #d6d6d6; border-radius:10px; padding:12px; }
+  .fl .topo { flex:1.6; position:relative; height:330px; }
+  .fl .side { flex:1; }
+  .fl .node { position:absolute; text-align:center; border-radius:10px; padding:8px 10px; font-size:12px; border:2px solid #888; background:#fafafa; width:150px; transition:all .3s; }
+  .fl .server { left:50%; top:8px; transform:translateX(-50%); border-color:#2563eb; background:#eff6ff; width:190px; }
+  .fl .c0 { left:2%; top:215px; } .fl .c1 { left:50%; top:215px; transform:translateX(-50%); } .fl .c2 { right:2%; top:215px; }
+  .fl .node b { display:block; font-size:13px; }
+  .fl .node.train { border-color:#ea580c; background:#fff7ed; box-shadow:0 0 0 4px #fed7aa; }
+  .fl .node.done { border-color:#16a34a; }
+  .fl .node.agg { box-shadow:0 0 0 5px #bfdbfe; }
+  .fl .bar { height:6px; background:#e5e7eb; border-radius:3px; margin-top:6px; overflow:hidden; }
+  .fl .bar i { display:block; height:100%; background:#16a34a; width:0; transition:width .5s; }
+  .fl svg.lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .fl .dot { position:absolute; width:14px; height:14px; border-radius:50%; opacity:0; z-index:5; }
+  .fl .down { background:#2563eb; } .fl .up { background:#ea580c; }
+  .fl .legend { position:absolute; left:10px; bottom:6px; font-size:11px; color:#555; }
+  .fl .legend span { display:inline-block; width:10px; height:10px; border-radius:50%; margin:0 4px 0 10px; }
+  .fl button { padding:8px 16px; border-radius:8px; border:0; background:#2563eb; color:#fff; font-size:14px; cursor:pointer; }
+  .fl .big { font-size:30px; font-weight:700; }
+  .fl table { width:100%; font-size:12px; border-collapse:collapse; }
+  .fl td, .fl th { padding:4px 6px; text-align:left; border-top:1px solid #eee; }
+  .fl .phase { font-size:13px; color:#444; margin-left:12px; }
+  .fl .tabs span { display:inline-block; padding:4px 10px; border:1px solid #ccc; border-radius:14px; font-size:12px; margin-right:6px; background:#fff; }
+  .fl .tabs span.on { background:#2563eb; color:#fff; border-color:#2563eb; }
+</style>
+
+<div class="fl">
+  <div style="margin-bottom:12px">
+    <button id="go">▶ Start run</button>
+    <span class="phase" id="phase">idle · rounds 25 · local epochs 2 · lr 0.001 · FedAvg</span>
+  </div>
+
+  <div class="row">
+    <div class="panel topo" id="topo">
+      <svg class="lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <line x1="50" y1="26" x2="14" y2="64" stroke="#bbb" stroke-width=".4" stroke-dasharray="1.5"/>
+        <line x1="50" y1="26" x2="50" y2="64" stroke="#bbb" stroke-width=".4" stroke-dasharray="1.5"/>
+        <line x1="50" y1="26" x2="86" y2="64" stroke="#bbb" stroke-width=".4" stroke-dasharray="1.5"/>
+      </svg>
+      <div class="node server" id="srv"><b>Central server · FedAvg</b>global model v<span id="ver">0</span><br>round <span id="rnd">0</span>/25 · global F1 <b style="display:inline" id="gf1">–</b>
+        <div class="bar"><i id="rbar"></i></div></div>
+      <div class="node c0" id="n0"><b>Client 0 · SYN flood</b>1× data · MLP<br>local F1 <span id="f0">–</span><div class="bar"><i id="b0"></i></div></div>
+      <div class="node c1" id="n1"><b>Client 1 · DNS DrDoS</b>4× data · MLP<br>local F1 <span id="f1">–</span><div class="bar"><i id="b1"></i></div></div>
+      <div class="node c2" id="n2"><b>Client 2 · UDP DrDoS</b>16× data · MLP<br>local F1 <span id="f2">–</span><div class="bar"><i id="b2"></i></div></div>
+      <div class="legend"><span class="down" style="background:#2563eb"></span>global weights ↓<span style="background:#ea580c"></span>local update ↑ &nbsp;·&nbsp; raw traffic never leaves a client</div>
+    </div>
+
+    <div class="side">
+      <div class="panel" style="margin-bottom:16px">
+        <div style="font-size:12px;color:#666">Central model, global test F1</div>
+        <div class="big" id="big">–</div>
+        <svg id="chart" viewBox="0 0 300 90" style="width:100%;height:90px"><polyline id="line" fill="none" stroke="#2563eb" stroke-width="2" points=""/></svg>
+        <div style="font-size:11px;color:#666">F1 per round (dashed = best local-only model)</div>
+      </div>
+      <div class="panel">
+        <div style="font-size:12px;color:#666;margin-bottom:4px">Traffic this round</div>
+        <table><tr><th></th><th>↓ KB</th><th>↑ KB</th></tr>
+          <tr><td>Client 0</td><td>31.6</td><td>31.6</td></tr>
+          <tr><td>Client 1</td><td>31.6</td><td>31.6</td></tr>
+          <tr><td>Client 2</td><td>31.6</td><td>31.6</td></tr></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs" style="margin-bottom:10px"><span class="on">Local vs Federated</span><span>Per client</span><span>Convergence</span><span>Comm cost</span><span>Runs</span></div>
+    <table>
+      <tr><th>Model</th><th>Client 0 test (SYN)</th><th>Client 1 test (DNS)</th><th>Client 2 test (UDP)</th><th>Global test (all attacks)</th></tr>
+      <tr><td>Local-only client 0</td><td>0.97</td><td>0.41</td><td>0.38</td><td>0.52</td></tr>
+      <tr><td>Local-only client 1</td><td>0.55</td><td>0.96</td><td>0.60</td><td>0.66</td></tr>
+      <tr><td>Local-only client 2</td><td>0.49</td><td>0.72</td><td>0.98</td><td>0.74</td></tr>
+      <tr style="background:#eff6ff;font-weight:600"><td>FedAvg central model</td><td id="t0">–</td><td id="t1">–</td><td id="t2">–</td><td id="t3">–</td></tr>
+    </table>
+    <div style="font-size:11px;color:#666;margin-top:6px">Each local-only model is good on its own attack and weak on the others. The federated model should be good on all of them.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const target=[0.97,0.96,0.98,0.95], hist=[];
+  let running=false;
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  function pos(el){const t=$('topo').getBoundingClientRect(),r=el.getBoundingClientRect();return {x:r.left-t.left+r.width/2-7,y:r.top-t.top+r.height/2-7};}
+  async function fly(from,to,cls){
+    const d=document.createElement('div'); d.className='dot '+cls; $('topo').appendChild(d);
+    const a=pos(from),b=pos(to); d.style.left=a.x+'px'; d.style.top=a.y+'px'; d.style.opacity=1;
+    d.style.transition='left .7s, top .7s'; await sleep(30); d.style.left=b.x+'px'; d.style.top=b.y+'px';
+    await sleep(750); d.remove();
+  }
+  function draw(){
+    const pts=hist.map((v,i)=>`${i*(300/24)},${90-v*85}`).join(' '); $('line').setAttribute('points',pts);
+  }
+  $('go').onclick=async()=>{
+    if(running)return; running=true; hist.length=0;
+    const N=25, nodes=[0,1,2].map(i=>$('n'+i));
+    for(let r=1;r<=N;r++){
+      const f=Math.min(0.95,0.64+0.31*(1-Math.exp(-r/5)))+(Math.random()-.5)*0.01;
+      $('phase').textContent=`round ${r} · server sends global model to clients`;
+      await Promise.all(nodes.map(n=>fly($('srv'),n,'down')));
+      $('phase').textContent=`round ${r} · clients train locally (2 epochs on their own traffic)`;
+      nodes.forEach(n=>n.classList.add('train'));
+      for(let i=0;i<3;i++){ $('f'+i).textContent=(f-0.04+Math.random()*0.05+(i==2?0.02:0)).toFixed(3); $('b'+i).style.width=(f*100)+'%'; }
+      await sleep(900); nodes.forEach(n=>{n.classList.remove('train');n.classList.add('done');});
+      $('phase').textContent=`round ${r} · clients send weight updates (not data) back`;
+      await Promise.all(nodes.map(n=>fly(n,$('srv'),'up')));
+      $('phase').textContent=`round ${r} · server averages updates weighted by sample count (1:4:16)`;
+      $('srv').classList.add('agg'); await sleep(500); $('srv').classList.remove('agg');
+      hist.push(f); draw(); $('rnd').textContent=r; $('ver').textContent=r; $('rbar').style.width=(r/N*100)+'%';
+      $('gf1').textContent=f.toFixed(3); $('big').textContent=f.toFixed(3);
+      nodes.forEach(n=>n.classList.remove('done'));
+    }
+    [0,1,2,3].forEach(i=>$('t'+i).textContent=(target[i]-0.01+Math.random()*0.02).toFixed(2));
+    $('phase').textContent='finished · federated model beats every local-only model on the global test set';
+    running=false;
+  };
+})();
+</script>
+
+<div style="margin-top:20px">
+  <h3>What do you think of this flow?</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="flow-ok" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Animation is right</h3><p>Server → clients → server, one cycle per round</p></div></div>
+    <div class="option" data-choice="more-client-detail" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Need more per client</h3><p>Click a client to open its own curve and confusion matrix</p></div></div>
+    <div class="option" data-choice="more-numbers" onclick="toggleSelect(this)"><div class="letter">C</div><div class="content"><h3>Need more numbers</h3><p>Precision, recall, false-alarm rate, detection latency</p></div></div>
+  </div>
+</div>

@@ -4,3 +4,6 @@ training/
 testing/
 data/
 results/*.pt
+/.serena
+runs/
+.superpowers/

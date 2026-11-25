@@ -1,0 +1,5 @@
+[
+  {"attack": "SYN", "attack_file": "training/Syn.csv",        "weight": 1},
+  {"attack": "DNS", "attack_file": "training/DrDoS_DNS.csv",  "weight": 4},
+  {"attack": "UDP", "attack_file": "training/DrDoS_UDP.csv",  "weight": 16}
+]

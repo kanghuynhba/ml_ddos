@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    volumes:
+      - /home/khang/Work/labs/py/ml_ddos/data:/data:ro        # preprocessed parquet + scaler
+      - /home/khang/Work/labs/py/ml_ddos/runs:/app/runs       # per-run configs, logs, metrics, models
+    restart: unless-stopped
