@@ -6,12 +6,6 @@ import { CommCost, CompareTable, Convergence, F1Chart, PerClient, RunsTab, STATU
 import { PHASES, useRoundPlayer } from "./useRoundPlayer.js";
 import "./styles.css";
 
-// shortcut: GET /clients is still 🔜 in the API contract; delete this once the backend serves it
-const FALLBACK_CLIENTS = [
-  { id: 0, name: "client_0", attack: "SYN", model: "MLP", share: 1 },
-  { id: 1, name: "client_1", attack: "DNS", model: "MLP", share: 4 },
-  { id: 2, name: "client_2", attack: "UDP", model: "MLP", share: 16 },
-];
 const PAGES = [
   ["overview", "▦", "Tổng quan"],
   ["flow", "⇅", "Quá trình huấn luyện"],
@@ -38,7 +32,7 @@ export default function App() {
   // /runs is newest first
   const run = runs.find((r) => r.id === selId) ?? runs.find((r) => r.config.kind === "fl");
   const localRun = runs.find((r) => r.config.kind === "local" && r.status === "done");
-  const clients = run?.clients ?? clientList ?? FALLBACK_CLIENTS;
+  const clients = run?.clients ?? clientList ?? [];
   const bestLocal = localRun ? Math.max(...Object.values(localRun.local_metrics ?? {}).map((m) => m.global_test_f1)) : null;
 
   useEffect(() => {
