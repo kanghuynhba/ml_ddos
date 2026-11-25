@@ -1,8 +1,11 @@
 import argparse
 import json
 import os
+import joblib
 import torch
-from model_utils import DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, DDoSMLP, evaluate_model, load_parquet_loader, train_epochs
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import f1_score
+from model_utils import DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_model, load_parquet_loader, load_xy, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -10,6 +13,8 @@ ap.add_argument("--epochs", type=int, default=15)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--batch-size", type=int, default=64)
 ap.add_argument("--seed", type=int, default=None)
+ap.add_argument("--model", choices=["mlp", "cnn", "rf"], default="mlp")
+ap.add_argument("--trees", type=int, default=100, help="rf only")
 ARGS = ap.parse_args()
 OUT = ARGS.out
 os.makedirs(OUT, exist_ok=True)
@@ -19,7 +24,24 @@ global_test_loader, input_dim = load_parquet_loader(f"{DATA_DIR}/global_test.par
 
 test_loaders = [load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", batch_size=256)[0] for i in range(NUM_CLIENTS)]
 local_results = {}
+
+
+def run_rf(cid: int) -> dict:
+    """Random Forest baseline: no epochs/lr/batch, just fit on the client's data."""
+    X, y = load_xy(f"{DATA_DIR}/client_{cid}_train.parquet")
+    rf = RandomForestClassifier(n_estimators=ARGS.trees, n_jobs=4, random_state=ARGS.seed).fit(X, y)
+    joblib.dump(rf, f"{OUT}/local_client_{cid}_rf.joblib")
+    paths = [f"{DATA_DIR}/client_{i}_test.parquet" for i in range(NUM_CLIENTS)] + [f"{DATA_DIR}/global_test.parquet"]
+    f1s = [float(f1_score(yt, rf.predict(Xt), zero_division=0)) for Xt, yt in map(load_xy, paths)]
+    return {"local_test_f1": round(f1s[cid], 4), "global_test_f1": round(f1s[-1], 4), "global_test_loss": None,
+            "test_f1": [round(v, 4) for v in f1s]}
+
+
 for cid in range(NUM_CLIENTS):
+    if ARGS.model == "rf":
+        local_results[f"client_{cid}"] = r = run_rf(cid)
+        print(f"Client {cid} RF Local-Only -> Local Test F1: {r['local_test_f1']:.4f} | Global Test F1: {r['global_test_f1']:.4f}")
+        continue
     train_loader, _ = load_parquet_loader(
         f"{DATA_DIR}/client_{cid}_train.parquet", batch_size=ARGS.batch_size, shuffle=True
     )
@@ -27,7 +49,7 @@ for cid in range(NUM_CLIENTS):
         f"{DATA_DIR}/client_{cid}_test.parquet", batch_size=256
     )
 
-    model = DDoSMLP(input_dim)
+    model = build_model(ARGS.model, input_dim)
     train_epochs(model, train_loader, epochs=ARGS.epochs, lr=ARGS.lr)
 
     local_loss, local_f1 = evaluate_model(model, local_test_loader)

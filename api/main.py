@@ -29,6 +29,7 @@ class RunRequest(BaseModel):
     mu: float = Field(0.0, ge=0, le=10)                       # fl only: FedProx weight, 0 = FedAvg
     weighting: str = Field("uniform", pattern="^(samples|uniform)$")  # fl only; uniform = equal vote per client (see experiments/)
     seed: int | None = Field(None, ge=0, le=2**31 - 1)
+    model: str = Field("mlp", pattern="^(mlp|cnn|rf)$")      # rf: local-only (trees can't be weight-averaged)
 
 
 def _status(run_id: str) -> str:
@@ -47,6 +48,8 @@ def health():
 
 @app.post("/runs")
 def start(req: RunRequest):
+    if req.kind == "fl" and req.model == "rf":
+        raise HTTPException(422, "Random Forest has no weights to average; use it for local-only runs")
     run_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
     out = RUNS / run_id
     out.mkdir()
@@ -59,6 +62,7 @@ def start(req: RunRequest):
                "--lr", str(req.lr), "--batch-size", str(req.batch_size)]
     if req.seed is not None:
         cmd += ["--seed", str(req.seed)]
+    cmd += ["--model", req.model]
     (out / "meta.json").write_text(json.dumps({"id": run_id, "config": req.model_dump(), "started": time.time()}))
     procs[run_id] = subprocess.Popen(cmd, stdout=open(out / "log.txt", "w"), stderr=subprocess.STDOUT)
     return {"id": run_id}

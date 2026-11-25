@@ -5,12 +5,9 @@ Writes experiments/syn_gap_results.json and prints a mean ± std table.
 """
 import json
 import statistics
-import sys
-import time
-import urllib.request
 from pathlib import Path
 
-API = sys.argv[1] if len(sys.argv) > 1 else "http://khang-linux:8000"
+from common import call, run_all
 SEEDS = [0, 1, 2]
 BASE = {"kind": "fl", "rounds": 25, "epochs": 2, "lr": 0.001, "batch_size": 64}
 CONFIGS = {
@@ -19,30 +16,6 @@ CONFIGS = {
     "FedProx mu=0.1 (samples)": {"mu": 0.1, "weighting": "samples"},
     "FedAvg (samples, E=1)": {"epochs": 1, "weighting": "samples"},
 }
-PARALLEL = 3
-
-
-def call(path, body=None):
-    req = urllib.request.Request(API + path, data=json.dumps(body).encode() if body else None,
-                                 headers={"Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(req, timeout=60))
-
-
-def run_all(jobs):
-    """jobs: list of (key, body). Runs PARALLEL at a time; returns {key: run_id}."""
-    ids, queue, active = {}, list(jobs), {}
-    while queue or active:
-        while queue and len(active) < PARALLEL:
-            key, body = queue.pop(0)
-            active[key] = ids[key] = call("/runs", body)["id"]
-            print("started", key, ids[key], flush=True)
-        time.sleep(10)
-        for key, rid in list(active.items()):
-            status = call(f"/runs/{rid}")["status"]
-            if status != "running":
-                print(status, key, flush=True)
-                del active[key]
-    return ids
 
 
 local_ids = run_all([(s, {"kind": "local", "epochs": 15, "lr": 0.001, "batch_size": 64, "seed": s}) for s in SEEDS])
