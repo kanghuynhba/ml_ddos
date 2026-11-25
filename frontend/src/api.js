@@ -1,5 +1,4 @@
-// dev goes through the Vite proxy (see vite.config.js); a build calls the backend directly
-export const API = import.meta.env.DEV ? "/api" : import.meta.env.VITE_API_URL;
+export const API = import.meta.env.VITE_API_URL;
 
 // 404 -> null, so planned (🔜) endpoints that don't exist yet just read as "no data"
 export async function get(path) {

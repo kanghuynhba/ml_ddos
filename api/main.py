@@ -26,6 +26,9 @@ class RunRequest(BaseModel):
     epochs: int = Field(2, ge=1, le=50)             # fl: local epochs per round; local: total epochs
     lr: float = Field(1e-3, gt=0, le=1)
     batch_size: int = Field(64, ge=8, le=4096)
+    mu: float = Field(0.0, ge=0, le=10)                       # fl only: FedProx weight, 0 = FedAvg
+    weighting: str = Field("uniform", pattern="^(samples|uniform)$")  # fl only; uniform = equal vote per client (see experiments/)
+    seed: int | None = Field(None, ge=0, le=2**31 - 1)
 
 
 def _status(run_id: str) -> str:
@@ -49,10 +52,13 @@ def start(req: RunRequest):
     out.mkdir()
     if req.kind == "fl":
         cmd = [sys.executable, "train_fl.py", "--out", str(out), "--rounds", str(req.rounds),
-               "--local-epochs", str(req.epochs), "--lr", str(req.lr), "--batch-size", str(req.batch_size)]
+               "--local-epochs", str(req.epochs), "--lr", str(req.lr), "--batch-size", str(req.batch_size),
+               "--mu", str(req.mu), "--weighting", req.weighting]
     else:
         cmd = [sys.executable, "train_local.py", "--out", str(out), "--epochs", str(req.epochs),
                "--lr", str(req.lr), "--batch-size", str(req.batch_size)]
+    if req.seed is not None:
+        cmd += ["--seed", str(req.seed)]
     (out / "meta.json").write_text(json.dumps({"id": run_id, "config": req.model_dump(), "started": time.time()}))
     procs[run_id] = subprocess.Popen(cmd, stdout=open(out / "log.txt", "w"), stderr=subprocess.STDOUT)
     return {"id": run_id}

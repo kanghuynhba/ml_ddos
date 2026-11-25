@@ -10,6 +10,9 @@ from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader, TensorDataset
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
+# torch defaults to one thread per core in every process; parallel runs and Flower's client workers
+# then oversubscribe the CPU. 4 threads is plenty for this small MLP.
+torch.set_num_threads(int(os.environ.get("TORCH_NUM_THREADS", "4")))
 CLIENT_CFG = load_clients()  # clients.json
 NUM_CLIENTS = len(CLIENT_CFG)
 ATTACKS = [c["attack"] for c in CLIENT_CFG]
@@ -44,10 +47,12 @@ class DDoSMLP(nn.Module):
 
 
 def train_epochs(
-    model: nn.Module, loader: DataLoader, epochs: int = 3, lr: float = 1e-3
+    model: nn.Module, loader: DataLoader, epochs: int = 3, lr: float = 1e-3, prox_mu: float = 0.0
 ) -> float:
+    """prox_mu > 0 adds the FedProx term mu/2 * ||w - w_start||^2, keeping the client near the global model."""
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    start = [p.detach().clone() for p in model.parameters()] if prox_mu > 0 else None
     model.train()
     last_loss = 0.0
     for _ in range(epochs):
@@ -56,7 +61,11 @@ def train_epochs(
             optimizer.zero_grad()
             logits = model(X_batch)
             loss = criterion(logits, y_batch)
-            loss.backward()
+            if start is not None:
+                prox = sum(((p - s) ** 2).sum() for p, s in zip(model.parameters(), start))
+                (loss + prox_mu / 2 * prox).backward()
+            else:
+                loss.backward()
             optimizer.step()
             total_loss += loss.item() * len(y_batch)
             count += len(y_batch)

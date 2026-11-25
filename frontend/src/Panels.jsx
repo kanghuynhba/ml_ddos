@@ -198,7 +198,7 @@ export function RunsTab({ runs, selId, onSelect }) {
           {runs.map((r) => (
             <tr key={r.id} className={`click ${r.id === selId ? "hl" : ""}`} onClick={() => onSelect(r.id)}>
               <td>{r.id}</td><td><span className={`status ${r.status}`}><i />{STATUS_VI[r.status] ?? r.status}</span></td>
-              <td><code>{r.config.kind} · {r.config.kind === "fl" && `${r.config.rounds} vòng · `}{r.config.epochs} epoch · lr {r.config.lr} · batch {r.config.batch_size}</code></td>
+              <td><code>{r.config.kind === "fl" ? `${r.config.mu > 0 ? `FedProx μ=${r.config.mu}` : "FedAvg"}${r.config.weighting === "uniform" ? " · đều" : ""} · ${r.config.rounds} vòng · ` : "local · "}{r.config.epochs} epoch · lr {r.config.lr} · batch {r.config.batch_size}{r.config.seed != null && ` · seed ${r.config.seed}`}</code></td>
               <td>{result(r)}</td>
               <td><button className="link" onClick={(e) => { e.stopPropagation(); showLog(r.id); }}>Xem log</button></td>
             </tr>
