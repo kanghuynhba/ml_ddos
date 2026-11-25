@@ -4,8 +4,7 @@ import os
 import joblib
 import torch
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score
-from model_utils import DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_model, load_parquet_loader, load_xy, train_epochs
+from model_utils import DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, build_model, detection_metrics, evaluate_detailed, load_parquet_loader, load_xy, rounded, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -32,9 +31,9 @@ def run_rf(cid: int) -> dict:
     rf = RandomForestClassifier(n_estimators=ARGS.trees, n_jobs=4, random_state=ARGS.seed).fit(X, y)
     joblib.dump(rf, f"{OUT}/local_client_{cid}_rf.joblib")
     paths = [f"{DATA_DIR}/client_{i}_test.parquet" for i in range(NUM_CLIENTS)] + [f"{DATA_DIR}/global_test.parquet"]
-    f1s = [float(f1_score(yt, rf.predict(Xt), zero_division=0)) for Xt, yt in map(load_xy, paths)]
-    return {"local_test_f1": round(f1s[cid], 4), "global_test_f1": round(f1s[-1], 4), "global_test_loss": None,
-            "test_f1": [round(v, 4) for v in f1s]}
+    ms = [rounded(detection_metrics(yt, rf.predict(Xt))) for Xt, yt in map(load_xy, paths)]
+    return {"local_test_f1": ms[cid]["f1"], "global_test_f1": ms[-1]["f1"], "global_test_loss": None,
+            "test_f1": [m["f1"] for m in ms], "test_metrics": ms}
 
 
 for cid in range(NUM_CLIENTS):
@@ -45,23 +44,20 @@ for cid in range(NUM_CLIENTS):
     train_loader, _ = load_parquet_loader(
         f"{DATA_DIR}/client_{cid}_train.parquet", batch_size=ARGS.batch_size, shuffle=True
     )
-    local_test_loader, _ = load_parquet_loader(
-        f"{DATA_DIR}/client_{cid}_test.parquet", batch_size=256
-    )
 
     model = build_model(ARGS.model, input_dim)
     train_epochs(model, train_loader, epochs=ARGS.epochs, lr=ARGS.lr)
 
-    local_loss, local_f1 = evaluate_model(model, local_test_loader)
-    global_loss, global_f1 = evaluate_model(model, global_test_loader)
-
-    f1s = [evaluate_model(model, ld)[1] for ld in test_loaders] + [global_f1]
+    global_loss, gm = evaluate_detailed(model, global_test_loader)
+    ms = [rounded(evaluate_detailed(model, ld)[1]) for ld in test_loaders] + [rounded(gm)]  # order = TEST_COLUMNS
+    local_f1, global_f1 = ms[cid]["f1"], ms[-1]["f1"]
     torch.save(model.state_dict(), f"{OUT}/local_client_{cid}.pt")
     local_results[f"client_{cid}"] = {
-        "local_test_f1": round(local_f1, 4),
-        "global_test_f1": round(global_f1, 4),
+        "local_test_f1": local_f1,
+        "global_test_f1": global_f1,
         "global_test_loss": round(global_loss, 4),
-        "test_f1": [round(v, 4) for v in f1s],  # order = TEST_COLUMNS
+        "test_f1": [m["f1"] for m in ms],
+        "test_metrics": ms,
     }
     print(
         f"Client {cid} Local-Only -> Local Test F1: {local_f1:.4f} | "

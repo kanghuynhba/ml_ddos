@@ -47,4 +47,10 @@ Added to the run object, fl runs, one entry per completed round (index aligns wi
 ## ✅ `GET /clients`
 List of configured clients (id, name, attack, sample count, model) so the topology renders N clients.
 
+## ✅ Detection metrics (runs created from 2026-11-26)
+- `history` adds `global_precision`, `global_recall`, `global_fpr` per round (fl).
+- `final.metrics`: one object per `final.columns` entry: `{"tp","fp","fn","tn","precision","recall","f1","fpr"}` (attack = positive; `fpr` = false-alarm rate on benign traffic).
+- `local_metrics.client_i.test_metrics`: same objects, order = test columns.
+- `GET /compare?...&metric=f1|precision|recall|fpr` adds `"metric"` and per-row `"values"` for that metric (`f1` is always present). Older runs: `values` are `null` for non-F1 metrics.
+
 Rule: if the frontend needs something not listed here, ask for a contract change first. Do not parse `log.txt`.

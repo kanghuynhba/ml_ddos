@@ -10,7 +10,7 @@ from flwr.simulation import run_simulation
 import matplotlib.pyplot as plt
 import torch
 import pyarrow.parquet as pq
-from model_utils import ATTACKS, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_model, load_parquet_loader, train_epochs
+from model_utils import ATTACKS, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_detailed, evaluate_model, load_parquet_loader, rounded, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -30,7 +30,7 @@ if ARGS.seed is not None:
     torch.manual_seed(ARGS.seed)
 
 GLOBAL_TEST_LOADER, INPUT_DIM = load_parquet_loader(f"{DATA_DIR}/global_test.parquet", batch_size=256)
-HISTORY = {"round": [], "global_loss": [], "global_f1": []}
+HISTORY = {"round": [], "global_loss": [], "global_f1": [], "global_precision": [], "global_recall": [], "global_fpr": []}
 NUM_ROUNDS = ARGS.rounds
 CLIENTS = {
     i: {
@@ -103,15 +103,19 @@ def client_fn(context: Context):
 def server_evaluate(server_round: int, parameters, config):
     model = build_model(ARGS.model, INPUT_DIM)
     set_weights(model, parameters)
-    loss, f1 = evaluate_model(model, GLOBAL_TEST_LOADER)
+    loss, gm = evaluate_detailed(model, GLOBAL_TEST_LOADER)
+    f1 = gm["f1"]
     HISTORY["round"].append(server_round)
     HISTORY["global_loss"].append(loss)
-    HISTORY["global_f1"].append(f1)
+    for k in ("f1", "precision", "recall", "fpr"):
+        HISTORY[f"global_{k}"].append(gm[k])
     dump("history.json", HISTORY)
     if server_round == NUM_ROUNDS:
         torch.save(model.state_dict(), f"{OUT}/fedavg_global_model.pt")
-        f1s = [evaluate_model(model, load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", 256)[0])[1] for i in range(NUM_CLIENTS)]
-        dump("final.json", {"columns": TEST_COLUMNS, "f1": [round(v, 4) for v in f1s + [f1]]})
+        per_client = [evaluate_detailed(model, load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", 256)[0])[1]
+                      for i in range(NUM_CLIENTS)]
+        metrics = [rounded(m) for m in per_client + [gm]]  # order = TEST_COLUMNS
+        dump("final.json", {"columns": TEST_COLUMNS, "f1": [m["f1"] for m in metrics], "metrics": metrics})
     return loss, {"global_f1": f1}
 
 
