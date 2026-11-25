@@ -1,0 +1,17 @@
+{
+  "client_0": {
+    "local_test_f1": 1.0,
+    "global_test_f1": 0.9662,
+    "global_test_loss": 0.1143
+  },
+  "client_1": {
+    "local_test_f1": 0.9994,
+    "global_test_f1": 0.8434,
+    "global_test_loss": 1.2533
+  },
+  "client_2": {
+    "local_test_f1": 0.9992,
+    "global_test_f1": 0.9433,
+    "global_test_loss": 0.2602
+  }
+}

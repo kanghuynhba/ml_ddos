@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+training/
+testing/
+data/
+results/*.pt
