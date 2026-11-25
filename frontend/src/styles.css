@@ -64,7 +64,7 @@ select:focus, input:focus { outline: 2px solid var(--blue); outline-offset: -1px
 .essentials span { color: var(--muted); }
 
 /* KPI tiles */
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .kpi { background: var(--card); border-radius: 4px; box-shadow: var(--shadow); padding: 14px 20px; border-top: 3px solid var(--blue); }
 .kpi-label { font-size: 13px; color: var(--muted); }
 .kpi-value { font-size: 28px; font-weight: 600; margin: 2px 0; font-variant-numeric: tabular-nums; }
@@ -169,3 +169,21 @@ table.compare td:first-child { white-space: nowrap; }
 /* chart legend above line charts */
 .chart-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: -4px 0 6px; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+
+/* metric switch (segmented control) */
+.seg { display: inline-flex; align-items: center; border: 1px solid #8a8886; border-radius: 2px; overflow: visible; }
+.seg button { background: #fff; border: 0; border-right: 1px solid var(--line-2); padding: 4px 10px; font-size: 12px; color: var(--text); }
+.seg button:last-of-type { border-right: 0; }
+.seg button.on { background: var(--blue); color: #fff; font-weight: 600; }
+.seg .info { margin: 0 6px; }
+
+/* confusion matrix */
+table.cm { table-layout: fixed; }
+table.cm th { font-weight: 400; color: var(--muted); white-space: normal; }
+table.cm th small, table.cm td small, table.cm td span { display: block; font-size: 12px; color: var(--muted); }
+table.cm td { text-align: center; padding: 14px 10px; border: 2px solid #fff; }
+table.cm td b { display: block; font-size: 24px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+table.cm td.ok { background: var(--green-bg); }
+table.cm td.miss { background: var(--red-bg); }
+.cm-rates { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.cm-rates b { color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }

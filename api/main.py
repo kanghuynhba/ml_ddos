@@ -102,15 +102,30 @@ def get_log(run_id: str):
     return {"log": f.read_text()[-8000:]}
 
 
+METRICS = ("f1", "precision", "recall", "fpr")
+
+
 @app.get("/compare")
-def compare(fl: str, local: str):
-    """Local-only models vs the FedAvg model, F1 on each client's test set and the global test set."""
+def compare(fl: str, local: str, metric: str = "f1"):
+    """Local-only models vs the federated model on each client's test set and the global test set.
+
+    Each row has "f1" (always) and "values" for the requested metric. Runs made before detailed metrics
+    existed have no precision/recall/fpr: their values are null.
+    """
+    if metric not in METRICS:
+        raise HTTPException(422, f"metric must be one of {METRICS}")
     f, l = _load(fl), _load(local)
     if "final" not in f or "local_metrics" not in l:
         raise HTTPException(409, "fl run or local run not finished yet")
-    rows = [{"model": f"local {k}", "f1": v["test_f1"]} for k, v in l["local_metrics"].items()]
-    rows.append({"model": "fedavg", "f1": f["final"]["f1"]})
-    return {"columns": f["final"]["columns"], "rows": rows}
+    cols = f["final"]["columns"]
+
+    def pick(f1s, detail):
+        return f1s if metric == "f1" else [m[metric] for m in detail] if detail else [None] * len(cols)
+
+    rows = [{"model": f"local {k}", "f1": v["test_f1"], "values": pick(v["test_f1"], v.get("test_metrics"))}
+            for k, v in l["local_metrics"].items()]
+    rows.append({"model": "fedavg", "f1": f["final"]["f1"], "values": pick(f["final"]["f1"], f["final"].get("metrics"))})
+    return {"columns": cols, "metric": metric, "rows": rows}
 
 
 @app.get("/clients")
