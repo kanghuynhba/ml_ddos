@@ -10,7 +10,7 @@ from flwr.simulation import run_simulation
 import matplotlib.pyplot as plt
 import torch
 import pyarrow.parquet as pq
-from model_utils import ATTACKS, DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, DDoSMLP, evaluate_model, load_parquet_loader, train_epochs
+from model_utils import ATTACKS, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_model, load_parquet_loader, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -22,6 +22,7 @@ ap.add_argument("--mu", type=float, default=0.0, help="FedProx proximal weight; 
 ap.add_argument("--weighting", choices=["samples", "uniform"], default="uniform",
                 help="aggregation weight per client; uniform won the SYN-gap experiment (experiments/syn_gap_results.md)")
 ap.add_argument("--seed", type=int, default=None)
+ap.add_argument("--model", choices=["mlp", "cnn"], default="mlp", help="same architecture on every client (FedAvg needs that)")
 ARGS = ap.parse_args() if __name__ == "__main__" else ap.parse_args([])
 OUT = ARGS.out
 os.makedirs(OUT, exist_ok=True)
@@ -33,7 +34,7 @@ HISTORY = {"round": [], "global_loss": [], "global_f1": []}
 NUM_ROUNDS = ARGS.rounds
 CLIENTS = {
     i: {
-        "id": i, "name": f"client_{i}", "attack": ATTACKS[i], "model": "MLP",
+        "id": i, "name": f"client_{i}", "attack": ATTACKS[i], "model": MODEL_LABELS[ARGS.model],
         "train_samples": pq.ParquetFile(f"{DATA_DIR}/client_{i}_train.parquet").metadata.num_rows,
         "rounds": [],
     }
@@ -62,7 +63,7 @@ def set_weights(model: torch.nn.Module, parameters):
 class DDoSClient(NumPyClient):
     def __init__(self, cid: int):
         self.cid = cid
-        self.model = DDoSMLP(INPUT_DIM)
+        self.model = None  # built on first fit/evaluate from the server's config (architecture travels with it)
         self.train_loader = None  # built in fit(), once the server has sent batch_size
         self.val_loader, _ = load_parquet_loader(
             f"{DATA_DIR}/client_{cid}_val.parquet", batch_size=256
@@ -76,6 +77,7 @@ class DDoSClient(NumPyClient):
             )
         if config["seed"] >= 0:
             torch.manual_seed(int(config["seed"]) * 1000 + self.cid * 100 + int(config["round"]))
+        self.model = self.model or build_model(config["model"], INPUT_DIM)
         set_weights(self.model, parameters)
         loss = train_epochs(self.model, self.train_loader, epochs=int(config["local_epochs"]),
                             lr=float(config["lr"]), prox_mu=float(config["mu"]))
@@ -87,6 +89,7 @@ class DDoSClient(NumPyClient):
         return new, len(self.train_loader.dataset), metrics
 
     def evaluate(self, parameters, config):
+        self.model = self.model or build_model(config["model"], INPUT_DIM)
         set_weights(self.model, parameters)
         loss, f1 = evaluate_model(self.model, self.val_loader)
         return float(loss), len(self.val_loader.dataset), {"f1": float(f1), "cid": self.cid}
@@ -98,7 +101,7 @@ def client_fn(context: Context):
 
 
 def server_evaluate(server_round: int, parameters, config):
-    model = DDoSMLP(INPUT_DIM)
+    model = build_model(ARGS.model, INPUT_DIM)
     set_weights(model, parameters)
     loss, f1 = evaluate_model(model, GLOBAL_TEST_LOADER)
     HISTORY["round"].append(server_round)
@@ -143,12 +146,12 @@ class RecordingFedAvg(FedAvg):
 
 
 def fit_config(server_round: int) -> dict:
-    return {"round": server_round, "local_epochs": ARGS.local_epochs, "lr": ARGS.lr, "batch_size": ARGS.batch_size,
+    return {"model": ARGS.model, "round": server_round, "local_epochs": ARGS.local_epochs, "lr": ARGS.lr, "batch_size": ARGS.batch_size,
             "mu": ARGS.mu, "seed": -1 if ARGS.seed is None else ARGS.seed}
 
 
 def server_fn(context: Context):
-    init_model = DDoSMLP(INPUT_DIM)
+    init_model = build_model(ARGS.model, INPUT_DIM)
     strategy = RecordingFedAvg(
         fraction_fit=1.0,
         fraction_evaluate=1.0,
@@ -158,6 +161,7 @@ def server_fn(context: Context):
         initial_parameters=ndarrays_to_parameters(get_weights(init_model)),
         evaluate_fn=server_evaluate,
         on_fit_config_fn=fit_config,
+        on_evaluate_config_fn=lambda rnd: {"model": ARGS.model},
     )
     return ServerAppComponents(strategy=strategy, config=ServerConfig(num_rounds=NUM_ROUNDS))
 

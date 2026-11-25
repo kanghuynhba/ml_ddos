@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fmt, get, post } from "./api.js";
+import { MODEL_LABEL, fmt, get, post } from "./api.js";
 import Topology from "./Topology.jsx";
 import { Info } from "./Info.jsx";
 import { CommCost, CompareTable, Convergence, F1Chart, PerClient, RunsTab, STATUS_VI, TrafficTable } from "./Panels.jsx";
@@ -112,6 +112,8 @@ const Kpi = ({ label, info, value, sub, tone }) => (
 );
 
 // "FedAvg" / "FedProx (μ=0.1)" plus how clients are weighted
+const modelOf = (c) => MODEL_LABEL[c?.model ?? "mlp"];
+
 export const strategyLabel = (c) =>
   c?.kind !== "fl" ? "Chỉ huấn luyện cục bộ"
     : `${c.mu > 0 ? `FedProx (μ=${c.mu})` : "FedAvg"} · ${c.weighting === "uniform" ? "trọng số đều giữa các client" : "trọng số theo số mẫu"}`;
@@ -131,8 +133,8 @@ function Overview({ run, localRun, clients, bestLocal, compare }) {
           <div><span>Trạng thái</span>{run ? <Status s={run.status} /> : "–"}</div>
           <div><span>Chiến lược</span><span className="v">{c ? <>{strategyLabel(c)}{c.kind === "fl" && <> <Info k={c.mu > 0 ? "fedprox" : c.weighting === "uniform" ? "uniform" : "fedavg"} /></>}</> : "–"}</span></div>
           <div><span>Bộ dữ liệu</span>CIC-DDoS2019</div>
-          <div><span>Clients</span>{clients.length} · {[...new Set(clients.map((x) => x.model))].join(", ")}</div>
-          <div><span>Siêu tham số</span>{c ? `${c.kind === "fl" ? `${c.rounds} vòng · ` : ""}${c.epochs} epoch · lr ${c.lr} · batch ${c.batch_size}${c.seed != null ? ` · seed ${c.seed}` : ""}` : "–"}</div>
+          <div><span>Clients</span>{clients.length} client · mô hình {modelOf(c)}</div>
+          <div><span>Siêu tham số</span>{c ? `${c.kind === "fl" ? `${c.rounds} vòng · ` : ""}${c.model === "rf" ? "100 cây" : `${c.epochs} epoch · lr ${c.lr} · batch ${c.batch_size}`}${c.seed != null ? ` · seed ${c.seed}` : ""}` : "–"}</div>
           <div><span>Bắt đầu lúc</span>{run ? new Date(run.started * 1000).toLocaleString("vi-VN") : "–"}</div>
           <div><span>Lượt chạy baseline</span>{localRun?.id ?? "chưa có"}</div>
         </div>
@@ -205,7 +207,7 @@ function ClientsTable({ clients, localRun }) {
 }
 
 function NewRunPanel({ onClose, onStarted }) {
-  const [cfg, setCfg] = useState({ kind: "fl", rounds: 25, epochs: 2, lr: 0.001, batch_size: 64, mu: 0, weighting: "uniform", seed: "" });
+  const [cfg, setCfg] = useState({ kind: "fl", rounds: 25, epochs: 2, lr: 0.001, batch_size: 64, mu: 0, weighting: "uniform", seed: "", model: "mlp" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -223,6 +225,7 @@ function NewRunPanel({ onClose, onStarted }) {
     setBusy(true); setErr("");
     const body = { ...cfg, seed: cfg.seed === "" ? null : Number(cfg.seed) };
     if (cfg.kind === "local") { delete body.mu; delete body.weighting; delete body.rounds; }
+    if (cfg.model === "rf") { delete body.epochs; delete body.lr; delete body.batch_size; }
     try { onStarted((await post("/runs", body)).id); } catch (e) { setErr(e.message); }
     setBusy(false);
   };
@@ -232,14 +235,23 @@ function NewRunPanel({ onClose, onStarted }) {
         <div className="blade-head"><h2>Lượt chạy mới</h2><button className="x" onClick={onClose} aria-label="Đóng">✕</button></div>
         <div className="blade-body">
           <label className="field">Loại lượt chạy
-            <select value={cfg.kind} onChange={(e) => setCfg({ ...cfg, kind: e.target.value })}>
+            <select value={cfg.kind} onChange={(e) => setCfg({ ...cfg, kind: e.target.value, model: e.target.value === "fl" && cfg.model === "rf" ? "mlp" : cfg.model })}>
               <option value="fl">Học liên kết (FedAvg)</option><option value="local">Baseline chỉ cục bộ</option>
             </select>
           </label>
+          <label className="field">Mô hình tại client
+            <select value={cfg.model} onChange={(e) => setCfg({ ...cfg, model: e.target.value })}>
+              <option value="mlp">MLP</option>
+              <option value="cnn">1D-CNN</option>
+              {cfg.kind === "local" && <option value="rf">Random Forest</option>}
+            </select>
+            <small>{cfg.kind === "fl" ? "Mọi client dùng cùng kiến trúc (FedAvg chỉ lấy trung bình được trọng số của cùng một mạng). Random Forest không có trọng số để lấy trung bình nên chỉ chạy cục bộ."
+              : cfg.model === "rf" ? "Random Forest (100 cây) không dùng epoch, learning rate hay batch size." : null}</small>
+          </label>
           {cfg.kind === "fl" && field("rounds", "Số vòng", 1, "Số chu kỳ server ⇄ client, từ 1 đến 500")}
-          {field("epochs", cfg.kind === "fl" ? "Số epoch cục bộ mỗi vòng" : "Số epoch", 1, cfg.kind === "fl" ? "Nên 1–5; nhiều hơn khiến các client trôi xa nhau" : null)}
-          {field("lr", "Learning rate (tốc độ học)", 0.0001)}
-          {field("batch_size", "Batch size (số mẫu mỗi lô)", 8)}
+          {cfg.model !== "rf" && field("epochs", cfg.kind === "fl" ? "Số epoch cục bộ mỗi vòng" : "Số epoch", 1, cfg.kind === "fl" ? "Nên 1–5; nhiều hơn khiến các client trôi xa nhau" : null)}
+          {cfg.model !== "rf" && field("lr", "Learning rate (tốc độ học)", 0.0001)}
+          {cfg.model !== "rf" && field("batch_size", "Batch size (số mẫu mỗi lô)", 8)}
           {cfg.kind === "fl" && (
             <>
               {field("mu", "μ của FedProx", 0.01, "0 = FedAvg thường; 0.01–1 giữ client gần mô hình toàn cục")}

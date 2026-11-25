@@ -20,13 +20,18 @@ TEST_COLUMNS = [f"client_{i}_test" for i in range(NUM_CLIENTS)] + ["global_test"
 SCALER = joblib.load(f"{DATA_DIR}/scaler.joblib")
 
 
+def load_xy(path: str) -> tuple[np.ndarray, np.ndarray]:
+    """Scaled features and labels as numpy arrays (also used by the sklearn models)."""
+    df = pd.read_parquet(path)
+    y = df["y"].values.astype(np.float32)
+    X = SCALER.transform(df.drop(columns=["y"]).values.astype(np.float32)).astype(np.float32)
+    return X, y
+
+
 def load_parquet_loader(
     path: str, batch_size: int = 64, shuffle: bool = False
 ) -> tuple[DataLoader, int]:
-    df = pd.read_parquet(path)
-    y = df["y"].values.astype(np.float32)
-    X = df.drop(columns=["y"]).values.astype(np.float32)
-    X = SCALER.transform(X).astype(np.float32)
+    X, y = load_xy(path)
     dataset = TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle), X.shape[1]
 
@@ -44,6 +49,30 @@ class DDoSMLP(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(-1)
+
+
+class DDoSCNN(nn.Module):
+    """1D-CNN over the flow-feature vector (features as one channel). ~10k weights, close to the MLP's ~7k."""
+
+    def __init__(self, input_dim: int):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv1d(1, 16, kernel_size=3, padding=1), nn.ReLU(),
+            nn.Conv1d(16, 32, kernel_size=3, padding=1), nn.ReLU(),
+            nn.AdaptiveMaxPool1d(8),
+        )
+        self.head = nn.Sequential(nn.Flatten(), nn.Linear(32 * 8, 32), nn.ReLU(), nn.Linear(32, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.conv(x.unsqueeze(1))).squeeze(-1)
+
+
+TORCH_MODELS = {"mlp": DDoSMLP, "cnn": DDoSCNN}
+MODEL_LABELS = {"mlp": "MLP", "cnn": "1D-CNN", "rf": "Random Forest"}
+
+
+def build_model(name: str, input_dim: int) -> nn.Module:
+    return TORCH_MODELS[name](input_dim)
 
 
 def train_epochs(

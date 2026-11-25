@@ -8,7 +8,7 @@ Base URL: `VITE_API_URL`. JSON everywhere. CORS is open (lab network only).
 ## ✅ `POST /runs`
 Body: `{"kind": "fl" | "local", "rounds": 25, "epochs": 2, "lr": 0.001, "batch_size": 64}`
 (`epochs` = local epochs per round for `fl`, total epochs for `local`.) Returns `{"id": "<run_id>"}`.
-Optional ✅: `"mu": 0.0` (fl: FedProx weight, 0 = FedAvg), `"weighting": "uniform" | "samples"` (fl: aggregation weight per client, default `uniform`; runs created before 2026-11-26 have no field and used `samples`), `"seed": 42` (fl and local). All are echoed back in `config`.
+Optional ✅: `"mu": 0.0` (fl: FedProx weight, 0 = FedAvg), `"weighting": "uniform" | "samples"` (fl: aggregation weight per client, default `uniform`; runs created before 2026-11-26 have no field and used `samples`), `"seed": 42` (fl and local), `"model": "mlp" | "cnn" | "rf"` (default `mlp`; `rf` only for `local`, an fl request with `rf` gets 422; runs without the field were MLP). All are echoed back in `config`.
 
 ## ✅ `GET /runs` and `GET /runs/{id}`
 ```json

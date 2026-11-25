@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { fmt, get } from "./api.js";
+import { MODEL_LABEL, fmt, get } from "./api.js";
 import { Info } from "./Info.jsx";
 import { clientLabel } from "./Topology.jsx";
 
@@ -111,7 +111,9 @@ export function CompareTable({ compare, clients, run, localRun }) {
     if (col === "global_test") return <>Test chung<small>mọi loại tấn công <Info k="globalTest" /></small></>;
     return col;
   };
-  const rowLabel = (m) => (m === "fedavg" ? "FedAvg (trung tâm)" : m.replace(/^local client_/, "Cục bộ client "));
+  const localModel = MODEL_LABEL[localRun?.config.model ?? "mlp"];
+  const flModel = MODEL_LABEL[run?.config.model ?? "mlp"];
+  const rowLabel = (m) => (m === "fedavg" ? `Liên kết, ${flModel} (trung tâm)` : `${m.replace(/^local client_/, "Cục bộ client ")} · ${localModel}`);
 
   return (
     <>
@@ -198,7 +200,7 @@ export function RunsTab({ runs, selId, onSelect }) {
           {runs.map((r) => (
             <tr key={r.id} className={`click ${r.id === selId ? "hl" : ""}`} onClick={() => onSelect(r.id)}>
               <td>{r.id}</td><td><span className={`status ${r.status}`}><i />{STATUS_VI[r.status] ?? r.status}</span></td>
-              <td><code>{r.config.kind === "fl" ? `${r.config.mu > 0 ? `FedProx μ=${r.config.mu}` : "FedAvg"}${r.config.weighting === "uniform" ? " · đều" : ""} · ${r.config.rounds} vòng · ` : "local · "}{r.config.epochs} epoch · lr {r.config.lr} · batch {r.config.batch_size}{r.config.seed != null && ` · seed ${r.config.seed}`}</code></td>
+              <td><code>{MODEL_LABEL[r.config.model ?? "mlp"]} · {r.config.kind === "fl" ? `${r.config.mu > 0 ? `FedProx μ=${r.config.mu}` : "FedAvg"}${r.config.weighting === "uniform" ? " · đều" : ""} · ${r.config.rounds} vòng · ` : "local · "}{r.config.model === "rf" ? "100 cây" : `${r.config.epochs} epoch · lr ${r.config.lr} · batch ${r.config.batch_size}`}{r.config.seed != null && ` · seed ${r.config.seed}`}</code></td>
               <td>{result(r)}</td>
               <td><button className="link" onClick={(e) => { e.stopPropagation(); showLog(r.id); }}>Xem log</button></td>
             </tr>

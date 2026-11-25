@@ -19,3 +19,6 @@ export async function post(path, body) {
 }
 
 export const fmt = (v, d = 3) => (v == null ? "–" : v.toFixed(d));
+
+// runs from before the model option have no `model` field; they were MLP
+export const MODEL_LABEL = { mlp: "MLP", cnn: "1D-CNN", rf: "Random Forest" };
