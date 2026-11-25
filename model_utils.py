@@ -10,6 +10,9 @@ from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader, TensorDataset
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
+# torch defaults to one thread per core in every process; parallel runs and Flower's client workers
+# then oversubscribe the CPU. 4 threads is plenty for this small MLP.
+torch.set_num_threads(int(os.environ.get("TORCH_NUM_THREADS", "4")))
 CLIENT_CFG = load_clients()  # clients.json
 NUM_CLIENTS = len(CLIENT_CFG)
 ATTACKS = [c["attack"] for c in CLIENT_CFG]
