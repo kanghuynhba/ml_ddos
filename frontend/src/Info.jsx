@@ -10,6 +10,7 @@ export const GLOSSARY = {
   ownTest: "F1 trên phần test riêng của client đó (cùng loại tấn công với dữ liệu train của nó).",
   globalTest: "Tập kiểm thử chung: phần test của mọi client cộng thêm tấn công SYN/UDP của ngày khác (cross-day) và lưu lượng bình thường.",
   fedavg: "FedAvg: server tính trọng số mới w = Σ (n_k / N) · w_k, với n_k là số mẫu train của client k và N là tổng số mẫu. Client có nhiều dữ liệu hơn có ảnh hưởng lớn hơn.",
+  fedprox: "FedProx: giống FedAvg nhưng mỗi client thêm số hạng phạt μ/2·‖w − w_toàn_cục‖² vào loss khi train cục bộ. Số hạng này giữ client không trôi quá xa mô hình toàn cục, giúp ổn định khi dữ liệu non-IID nặng.",
   bytes: "Dung lượng trọng số mô hình trao đổi trong vòng: ↓ server gửi xuống client, ↑ client gửi lên server. Chỉ có trọng số, không có dữ liệu lưu lượng thô.",
   valF1: "F1 trên tập validation riêng của từng client, đo ngay sau khi client nhận mô hình toàn cục của vòng đó.",
   trainLoss: "Loss trung bình khi client huấn luyện cục bộ trong vòng đó.",

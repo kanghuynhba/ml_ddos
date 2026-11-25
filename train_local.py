@@ -9,9 +9,12 @@ ap.add_argument("--out", default="results")
 ap.add_argument("--epochs", type=int, default=15)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--batch-size", type=int, default=64)
+ap.add_argument("--seed", type=int, default=None)
 ARGS = ap.parse_args()
 OUT = ARGS.out
 os.makedirs(OUT, exist_ok=True)
+if ARGS.seed is not None:
+    torch.manual_seed(ARGS.seed)
 global_test_loader, input_dim = load_parquet_loader(f"{DATA_DIR}/global_test.parquet", batch_size=256)
 
 test_loaders = [load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", batch_size=256)[0] for i in range(NUM_CLIENTS)]

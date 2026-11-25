@@ -18,9 +18,14 @@ ap.add_argument("--rounds", type=int, default=25)
 ap.add_argument("--local-epochs", type=int, default=2)
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--batch-size", type=int, default=64)
+ap.add_argument("--mu", type=float, default=0.0, help="FedProx proximal weight; 0 = plain FedAvg")
+ap.add_argument("--weighting", choices=["samples", "uniform"], default="samples", help="aggregation weight per client")
+ap.add_argument("--seed", type=int, default=None)
 ARGS = ap.parse_args() if __name__ == "__main__" else ap.parse_args([])
 OUT = ARGS.out
 os.makedirs(OUT, exist_ok=True)
+if ARGS.seed is not None:
+    torch.manual_seed(ARGS.seed)
 
 GLOBAL_TEST_LOADER, INPUT_DIM = load_parquet_loader(f"{DATA_DIR}/global_test.parquet", batch_size=256)
 HISTORY = {"round": [], "global_loss": [], "global_f1": []}
@@ -57,16 +62,22 @@ class DDoSClient(NumPyClient):
     def __init__(self, cid: int):
         self.cid = cid
         self.model = DDoSMLP(INPUT_DIM)
-        self.train_loader, _ = load_parquet_loader(
-            f"{DATA_DIR}/client_{cid}_train.parquet", batch_size=ARGS.batch_size, shuffle=True
-        )
+        self.train_loader = None  # built in fit(), once the server has sent batch_size
         self.val_loader, _ = load_parquet_loader(
             f"{DATA_DIR}/client_{cid}_val.parquet", batch_size=256
         )
 
     def fit(self, parameters, config):
+        # hyperparameters come from the server each round (see fit_config), not from this process's argv
+        if self.train_loader is None or self.train_loader.batch_size != int(config["batch_size"]):
+            self.train_loader, _ = load_parquet_loader(
+                f"{DATA_DIR}/client_{self.cid}_train.parquet", batch_size=int(config["batch_size"]), shuffle=True
+            )
+        if config["seed"] >= 0:
+            torch.manual_seed(int(config["seed"]) * 1000 + self.cid * 100 + int(config["round"]))
         set_weights(self.model, parameters)
-        loss = train_epochs(self.model, self.train_loader, epochs=ARGS.local_epochs, lr=ARGS.lr)
+        loss = train_epochs(self.model, self.train_loader, epochs=int(config["local_epochs"]),
+                            lr=float(config["lr"]), prox_mu=float(config["mu"]))
         new = get_weights(self.model)
         metrics = {
             "cid": self.cid, "train_loss": float(loss),
@@ -115,6 +126,8 @@ class RecordingFedAvg(FedAvg):
                 "bytes_down": int(m["bytes_down"]), "bytes_up": int(m["bytes_up"]),
                 "num_examples": res.num_examples,
             })
+            if ARGS.weighting == "uniform":
+                res.num_examples = 1  # every client gets an equal vote in the average
         dump("phase.json", {"round": server_round, "state": "aggregating"})
         return super().aggregate_fit(server_round, results, failures)
 
@@ -128,6 +141,11 @@ class RecordingFedAvg(FedAvg):
         return super().aggregate_evaluate(server_round, results, failures)
 
 
+def fit_config(server_round: int) -> dict:
+    return {"round": server_round, "local_epochs": ARGS.local_epochs, "lr": ARGS.lr, "batch_size": ARGS.batch_size,
+            "mu": ARGS.mu, "seed": -1 if ARGS.seed is None else ARGS.seed}
+
+
 def server_fn(context: Context):
     init_model = DDoSMLP(INPUT_DIM)
     strategy = RecordingFedAvg(
@@ -138,6 +156,7 @@ def server_fn(context: Context):
         min_available_clients=NUM_CLIENTS,
         initial_parameters=ndarrays_to_parameters(get_weights(init_model)),
         evaluate_fn=server_evaluate,
+        on_fit_config_fn=fit_config,
     )
     return ServerAppComponents(strategy=strategy, config=ServerConfig(num_rounds=NUM_ROUNDS))
 

@@ -111,6 +111,11 @@ const Kpi = ({ label, info, value, sub, tone }) => (
   <div className="kpi"><div className="kpi-label">{label} <Info k={info} /></div><div className={`kpi-value ${tone ?? ""}`}>{value}</div>{sub && <div className="kpi-sub">{sub}</div>}</div>
 );
 
+// "FedAvg" / "FedProx (μ=0.1)" plus how clients are weighted
+export const strategyLabel = (c) =>
+  c?.kind !== "fl" ? "Chỉ huấn luyện cục bộ"
+    : `${c.mu > 0 ? `FedProx (μ=${c.mu})` : "FedAvg"} · ${c.weighting === "uniform" ? "trọng số đều giữa các client" : "trọng số theo số mẫu"}`;
+
 const Status = ({ s }) => <span className={`status ${s}`}><i />{STATUS_VI[s] ?? s}</span>;
 
 function Overview({ run, localRun, clients, bestLocal, compare }) {
@@ -124,10 +129,10 @@ function Overview({ run, localRun, clients, bestLocal, compare }) {
         <div className="essentials">
           <div><span>Lượt chạy</span>{run?.id ?? "–"}</div>
           <div><span>Trạng thái</span>{run ? <Status s={run.status} /> : "–"}</div>
-          <div><span>Chiến lược</span><span className="v">{c?.kind === "fl" ? <>FedAvg (trung bình có trọng số theo số mẫu) <Info k="fedavg" /></> : c ? "Chỉ huấn luyện cục bộ" : "–"}</span></div>
+          <div><span>Chiến lược</span><span className="v">{c ? <>{strategyLabel(c)}{c.kind === "fl" && <> <Info k={c.mu > 0 ? "fedprox" : "fedavg"} /></>}</> : "–"}</span></div>
           <div><span>Bộ dữ liệu</span>CIC-DDoS2019</div>
           <div><span>Clients</span>{clients.length} · {[...new Set(clients.map((x) => x.model))].join(", ")}</div>
-          <div><span>Siêu tham số</span>{c ? `${c.kind === "fl" ? `${c.rounds} vòng · ` : ""}${c.epochs} epoch · lr ${c.lr} · batch ${c.batch_size}` : "–"}</div>
+          <div><span>Siêu tham số</span>{c ? `${c.kind === "fl" ? `${c.rounds} vòng · ` : ""}${c.epochs} epoch · lr ${c.lr} · batch ${c.batch_size}${c.seed != null ? ` · seed ${c.seed}` : ""}` : "–"}</div>
           <div><span>Bắt đầu lúc</span>{run ? new Date(run.started * 1000).toLocaleString("vi-VN") : "–"}</div>
           <div><span>Lượt chạy baseline</span>{localRun?.id ?? "chưa có"}</div>
         </div>
@@ -200,7 +205,7 @@ function ClientsTable({ clients, localRun }) {
 }
 
 function NewRunPanel({ onClose, onStarted }) {
-  const [cfg, setCfg] = useState({ kind: "fl", rounds: 25, epochs: 2, lr: 0.001, batch_size: 64 });
+  const [cfg, setCfg] = useState({ kind: "fl", rounds: 25, epochs: 2, lr: 0.001, batch_size: 64, mu: 0, weighting: "samples", seed: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -216,7 +221,9 @@ function NewRunPanel({ onClose, onStarted }) {
   );
   const start = async () => {
     setBusy(true); setErr("");
-    try { onStarted((await post("/runs", cfg)).id); } catch (e) { setErr(e.message); }
+    const body = { ...cfg, seed: cfg.seed === "" ? null : Number(cfg.seed) };
+    if (cfg.kind === "local") { delete body.mu; delete body.weighting; delete body.rounds; }
+    try { onStarted((await post("/runs", body)).id); } catch (e) { setErr(e.message); }
     setBusy(false);
   };
   return (
@@ -233,6 +240,23 @@ function NewRunPanel({ onClose, onStarted }) {
           {field("epochs", cfg.kind === "fl" ? "Số epoch cục bộ mỗi vòng" : "Số epoch", 1, cfg.kind === "fl" ? "Nên 1–5; nhiều hơn khiến các client trôi xa nhau" : null)}
           {field("lr", "Learning rate (tốc độ học)", 0.0001)}
           {field("batch_size", "Batch size (số mẫu mỗi lô)", 8)}
+          {cfg.kind === "fl" && (
+            <>
+              {field("mu", "μ của FedProx", 0.01, "0 = FedAvg thường; 0.01–1 giữ client gần mô hình toàn cục")}
+              <label className="field">Trọng số khi tổng hợp
+                <select value={cfg.weighting} onChange={(e) => setCfg({ ...cfg, weighting: e.target.value })}>
+                  <option value="samples">Theo số mẫu (FedAvg chuẩn)</option>
+                  <option value="uniform">Đều nhau giữa các client</option>
+                </select>
+                <small>“Đều nhau” giúp client ít dữ liệu (SYN) có tiếng nói ngang các client lớn</small>
+              </label>
+            </>
+          )}
+          <label className="field">Seed (tùy chọn)
+            <input type="number" step={1} min={0} value={cfg.seed} placeholder="ngẫu nhiên"
+              onChange={(e) => setCfg({ ...cfg, seed: e.target.value })} />
+            <small>Đặt seed để lặp lại kết quả; chạy nhiều seed để so sánh công bằng</small>
+          </label>
           {err && <div className="msgbar error">{err}</div>}
         </div>
         <div className="blade-foot">
