@@ -197,3 +197,10 @@ table.per-attack tr.benign td { background: #faf9f8; }
 table.per-attack small { color: var(--muted); }
 .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 2px; font-size: 11px; background: #f3f2f1; color: var(--text); }
 .badge.warn { background: var(--orange-bg); color: #8a3707; }
+
+/* topology with 5+ clients */
+.topo.compact { height: 380px; }
+.topo.compact .client { padding: 6px 8px; font-size: 11px; }
+.topo.compact .client .node-title { font-size: 12px; margin: 2px 0 4px; line-height: 1.25; }
+.topo.compact .client .node-stats { flex-direction: column; gap: 0; }
+.topo.compact .client .tag { font-size: 9px; padding: 0 4px; }

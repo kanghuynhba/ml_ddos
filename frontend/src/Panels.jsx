@@ -313,7 +313,7 @@ export function PerAttackTable({ run, localRun, clients }) {
     const rates = locals.map((m) => m.per_attack[key]?.rate).filter((x) => x != null);
     return { key, attack, day, n: v.n, fl: v.rate, best: rates.length ? (attack === "BENIGN" ? Math.min(...rates) : Math.max(...rates)) : null,
              worst: rates.length ? (attack === "BENIGN" ? Math.max(...rates) : Math.min(...rates)) : null };
-  }).sort((a, b) => (a.attack === "BENIGN") - (b.attack === "BENIGN") || a.day.localeCompare(b.day) || a.attack.localeCompare(b.attack));
+  }).sort((a, b) => (a.attack === "BENIGN") - (b.attack === "BENIGN") || b.day.localeCompare(a.day) /* train_day (same day) first */ || a.attack.localeCompare(b.attack));
   const tone = (r, v) => (v == null ? "" : r.attack === "BENIGN" ? (v <= 0.01 ? "good" : v >= 0.05 ? "bad" : "") : v >= 0.95 ? "good" : v < 0.5 ? "bad" : "");
   const cell = (r, v) => <td className={`num rate ${tone(r, v)}`}>{v == null ? "–" : `${(v * 100).toFixed(1)}%`}</td>;
   return (
