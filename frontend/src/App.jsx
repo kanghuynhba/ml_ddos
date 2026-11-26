@@ -87,10 +87,7 @@ export default function App() {
           {page === "flow" && <FlowView key={run?.id ?? "none"} {...ctx} />}
           {page === "quality" && (
             <>
-              <div className="grid-2">
-                <Card title="Ma trận nhầm lẫn của mô hình liên kết" info="confusion"><ConfusionMatrix key={run?.id} run={run} clients={clients} /></Card>
-                <Card title="Precision, Recall và tỉ lệ báo động nhầm theo vòng" info="fpr"><DetectionChart run={run} /></Card>
-              </div>
+              <Card title="Precision, Recall và tỉ lệ báo động nhầm theo vòng" info="fpr"><DetectionChart run={run} /></Card>
               <Card title="F1 và loss toàn cục theo từng vòng" info="loss"><Convergence run={run} /></Card>
               {compareCard}
             </>
@@ -164,9 +161,10 @@ function Overview({ run, localRun, clients, bestLocal, compareCard }) {
       </div>
 
       <div className="grid-2">
-        <Card title="F1 toàn cục theo từng vòng" info="f1"><F1Chart run={run} bestLocal={bestLocal} /></Card>
-        {compareCard}
+        <Card title="F1 toàn cục theo từng vòng" info="f1"><F1Chart run={run} bestLocal={bestLocal} height={300} /></Card>
+        <Card title="Ma trận nhầm lẫn của mô hình liên kết" info="confusion"><ConfusionMatrix key={run?.id} run={run} clients={clients} /></Card>
       </div>
+      {compareCard}
     </>
   );
 }

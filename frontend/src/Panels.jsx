@@ -241,7 +241,7 @@ export function ConfusionMatrix({ run, clients }) {
   if (!ms) return <Note>{run.status === "running" ? "Ma trận có sau vòng cuối cùng." : "Lượt chạy này được tạo trước khi có số liệu chi tiết. Hãy chạy lại để xem ma trận nhầm lẫn."}</Note>;
   const m = ms[col] ?? ms.at(-1);
   const n = (v) => v.toLocaleString("vi-VN");
-  const share = (a, b) => (b ? `${((100 * a) / b).toFixed(1)}%` : "–");
+  const share = (a, b) => (b ? `${((100 * a) / b).toFixed((100 * a) / b < 1 ? 2 : 1)}%` : "–");
   const label = (c) => {
     const cl = clients.find((x) => `${x.name}_test` === c);
     return c === "global_test" ? "Test chung (mọi loại tấn công)" : cl ? `Test client ${cl.id} (${cl.attack})` : c;
