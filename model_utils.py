@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from config import load_clients
+from config import load_clients, load_manifest
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -18,13 +18,16 @@ NUM_CLIENTS = len(CLIENT_CFG)
 ATTACKS = [c["attack"] for c in CLIENT_CFG]
 TEST_COLUMNS = [f"client_{i}_test" for i in range(NUM_CLIENTS)] + ["global_test"]
 SCALER = joblib.load(f"{DATA_DIR}/scaler.joblib")
+_MANIFEST = load_manifest()
+FEATURES = _MANIFEST["features"] if _MANIFEST else None  # v1 data: every column except y is a feature
 
 
 def load_xy(path: str) -> tuple[np.ndarray, np.ndarray]:
     """Scaled features and labels as numpy arrays (also used by the sklearn models)."""
     df = pd.read_parquet(path)
     y = df["y"].values.astype(np.float32)
-    X = SCALER.transform(df.drop(columns=["y"]).values.astype(np.float32)).astype(np.float32)
+    raw = df[FEATURES] if FEATURES else df.drop(columns=["y"])
+    X = SCALER.transform(raw.values.astype(np.float32)).astype(np.float32)
     return X, y
 
 
@@ -143,3 +146,27 @@ def evaluate_detailed(model: nn.Module, loader: DataLoader) -> tuple[float, dict
 def evaluate_model(model: nn.Module, loader: DataLoader) -> tuple[float, float]:
     loss, m = evaluate_detailed(model, loader)
     return loss, m["f1"]
+
+
+def per_attack_recall(y_pred: np.ndarray, path: str) -> dict | None:
+    """Detection rate per attack type (and false-alarm rate on BENIGN) for a test file with an `attack` column.
+
+    y_pred must be in the file's row order. Returns None for v1 files without the column.
+    """
+    df = pd.read_parquet(path, columns=None)
+    if "attack" not in df:
+        return None
+    out = {}
+    for (attack, day), idx in df.groupby(["attack", df.get("day", pd.Series("", index=df.index))]).groups.items():
+        p = np.asarray(y_pred)[idx]
+        key = f"{attack}@{day}" if day else attack
+        out[key] = {"n": int(len(idx)), "rate": round(float(p.mean()), 4)}  # attack: detection rate; BENIGN: false-alarm rate
+    return out
+
+
+@torch.no_grad()
+def predict(model: nn.Module, path: str) -> np.ndarray:
+    """0/1 predictions for every row of a parquet file, in file order."""
+    model.eval()
+    X, _ = load_xy(path)
+    return (torch.sigmoid(model(torch.from_numpy(X))) >= 0.5).numpy().astype(int)

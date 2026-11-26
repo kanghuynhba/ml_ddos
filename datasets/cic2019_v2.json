@@ -1,0 +1,23 @@
+{
+  "version": "v2",
+  "description": "CIC-DDoS2019, 6 mixed sites. Every training-day attack type is seen by at least one site; DNS and UDP by two. Portmap exists only in the cross-day test (no site trains on it).",
+  "seed": 42,
+  "stage": "data/stage",
+  "out": "data/v2",
+  "benign_pool": "train_day",
+  "clients": [
+    {"name": "client_0", "label": "Chi nhánh nhỏ", "attacks": ["Syn", "UDPLag"], "weight": 1, "attack_ratio": 1.0},
+    {"name": "client_1", "label": "Nhà cung cấp DNS", "attacks": ["DNS", "LDAP"], "weight": 2, "attack_ratio": 1.0},
+    {"name": "client_2", "label": "Trung tâm dữ liệu", "attacks": ["UDP", "SSDP"], "weight": 4, "attack_ratio": 1.0},
+    {"name": "client_3", "label": "Nhà mạng", "attacks": ["NTP", "SNMP", "DNS"], "weight": 2, "attack_ratio": 1.0},
+    {"name": "client_4", "label": "Doanh nghiệp", "attacks": ["MSSQL", "NetBIOS"], "weight": 3, "attack_ratio": 1.0},
+    {"name": "client_5", "label": "Nhà cung cấp hosting", "attacks": ["TFTP", "UDP"], "weight": 8, "attack_ratio": 1.0}
+  ],
+  "split": {"train": 0.8, "val": 0.1, "test": 0.1},
+  "test": {
+    "same_day_attacks_per_type": 1000,
+    "same_day_benign": 8000,
+    "cross_day_attacks_per_type": 1500,
+    "cross_day_benign": 10500
+  }
+}

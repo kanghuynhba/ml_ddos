@@ -10,7 +10,7 @@ from flwr.simulation import run_simulation
 import matplotlib.pyplot as plt
 import torch
 import pyarrow.parquet as pq
-from model_utils import ATTACKS, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_detailed, evaluate_model, load_parquet_loader, rounded, train_epochs
+from model_utils import ATTACKS, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_detailed, evaluate_model, load_parquet_loader, per_attack_recall, predict, rounded, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -115,7 +115,9 @@ def server_evaluate(server_round: int, parameters, config):
         per_client = [evaluate_detailed(model, load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", 256)[0])[1]
                       for i in range(NUM_CLIENTS)]
         metrics = [rounded(m) for m in per_client + [gm]]  # order = TEST_COLUMNS
-        dump("final.json", {"columns": TEST_COLUMNS, "f1": [m["f1"] for m in metrics], "metrics": metrics})
+        gpath = f"{DATA_DIR}/global_test.parquet"
+        dump("final.json", {"columns": TEST_COLUMNS, "f1": [m["f1"] for m in metrics], "metrics": metrics,
+                            "per_attack": per_attack_recall(predict(model, gpath), gpath)})
     return loss, {"global_f1": f1}
 
 

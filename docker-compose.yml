@@ -5,4 +5,16 @@ services:
     volumes:
       - /home/khang/Work/labs/py/ml_ddos/data:/data:ro        # preprocessed parquet + scaler
       - /home/khang/Work/labs/py/ml_ddos/runs:/app/runs       # per-run configs, logs, metrics, models
+    environment:
+      DATA_DIR: /data/v2   # built by the prep service below; v1 files stay in /data for old runs
     restart: unless-stopped
+
+  # one-off data preparation: docker compose --profile prep run --rm prep python -m prep.stage ...
+  prep:
+    build: .
+    profiles: ["prep"]
+    volumes:
+      - /home/khang/Work/labs/py/ml_ddos/training:/raw/training:ro
+      - /home/khang/Work/labs/py/ml_ddos/testing:/raw/testing:ro
+      - /home/khang/Work/labs/py/ml_ddos/data:/data
+    command: ["python", "-m", "prep.stage", "--help"]
