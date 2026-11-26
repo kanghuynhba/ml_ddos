@@ -10,7 +10,7 @@ from flwr.simulation import run_simulation
 import matplotlib.pyplot as plt
 import torch
 import pyarrow.parquet as pq
-from model_utils import ATTACKS, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_detailed, evaluate_model, load_parquet_loader, per_attack_recall, predict, rounded, train_epochs
+from model_utils import ATTACKS, CLIENT_CFG, DATA_DIR, MODEL_LABELS, NUM_CLIENTS, TEST_COLUMNS, build_model, evaluate_detailed, evaluate_model, load_parquet_loader, per_attack_recall, predict, rounded, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -34,7 +34,8 @@ HISTORY = {"round": [], "global_loss": [], "global_f1": [], "global_precision": 
 NUM_ROUNDS = ARGS.rounds
 CLIENTS = {
     i: {
-        "id": i, "name": f"client_{i}", "attack": ATTACKS[i], "model": MODEL_LABELS[ARGS.model],
+        "id": i, "name": f"client_{i}", "attack": ATTACKS[i], "attacks": CLIENT_CFG[i].get("attacks", [ATTACKS[i]]), "label": CLIENT_CFG[i].get("label"),
+        "model": MODEL_LABELS[ARGS.model],
         "train_samples": pq.ParquetFile(f"{DATA_DIR}/client_{i}_train.parquet").metadata.num_rows,
         "rounds": [],
     }

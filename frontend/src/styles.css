@@ -114,7 +114,7 @@ pre.log { max-height: 300px; overflow: auto; background: #f3f2f1; border: 1px so
 @keyframes dash { to { stroke-dashoffset: -18; } }
 .node { position: absolute; transform: translate(-50%, -50%); background: #fff; border: 1px solid var(--line-2); border-radius: 4px; padding: 10px 12px;
   box-shadow: var(--shadow); font-size: 12px; transition: border-color .3s, background .3s, box-shadow .3s; }
-.node-kicker { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.node-kicker { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .node-title { font-size: 14px; font-weight: 600; margin: 2px 0 6px; }
 .node-stats { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
 .node-stats b { color: var(--text); }
@@ -189,3 +189,11 @@ table.cm td.miss { background: var(--red-bg); }
 .cm-rates b { color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .card-head { flex-wrap: wrap; gap: 8px 16px; }
 .seg button { white-space: nowrap; }
+
+/* per-attack detection table */
+table.per-attack td.rate.good { color: var(--green); font-weight: 600; }
+table.per-attack td.rate.bad { color: var(--red); font-weight: 600; }
+table.per-attack tr.benign td { background: #faf9f8; }
+table.per-attack small { color: var(--muted); }
+.badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 2px; font-size: 11px; background: #f3f2f1; color: var(--text); }
+.badge.warn { background: var(--orange-bg); color: #8a3707; }

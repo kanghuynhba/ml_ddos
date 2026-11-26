@@ -301,3 +301,44 @@ export function DetectionChart({ run }) {
     </ResponsiveContainer>
   );
 }
+
+// detection rate per attack type on the shared test: the federated model vs the best/worst local-only model
+export function PerAttackTable({ run, localRun, clients }) {
+  const pa = run?.final?.per_attack;
+  if (!pa) return <Note>Chưa có: cần lượt chạy học liên kết trên dữ liệu v2 (có cột loại tấn công trong tập test).</Note>;
+  const trained = new Set(clients.flatMap((c) => c.attacks ?? [c.attack]));
+  const locals = Object.values(localRun?.local_metrics ?? {}).filter((m) => m.per_attack);
+  const rows = Object.entries(pa).map(([key, v]) => {
+    const [attack, day] = key.split("@");
+    const rates = locals.map((m) => m.per_attack[key]?.rate).filter((x) => x != null);
+    return { key, attack, day, n: v.n, fl: v.rate, best: rates.length ? (attack === "BENIGN" ? Math.min(...rates) : Math.max(...rates)) : null,
+             worst: rates.length ? (attack === "BENIGN" ? Math.max(...rates) : Math.min(...rates)) : null };
+  }).sort((a, b) => (a.attack === "BENIGN") - (b.attack === "BENIGN") || a.day.localeCompare(b.day) || a.attack.localeCompare(b.attack));
+  const tone = (r, v) => (v == null ? "" : r.attack === "BENIGN" ? (v <= 0.01 ? "good" : v >= 0.05 ? "bad" : "") : v >= 0.95 ? "good" : v < 0.5 ? "bad" : "");
+  const cell = (r, v) => <td className={`num rate ${tone(r, v)}`}>{v == null ? "–" : `${(v * 100).toFixed(1)}%`}</td>;
+  return (
+    <>
+      <table className="per-attack">
+        <thead><tr>
+          <th>Loại lưu lượng</th><th>Ngày</th><th className="num">Số flow</th>
+          <th className="num">Liên kết</th><th className="num">Cục bộ tốt nhất</th><th className="num">Cục bộ kém nhất</th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key} className={r.attack === "BENIGN" ? "benign" : ""}>
+              <td>
+                {r.attack === "BENIGN" ? <>Bình thường <small>(tỉ lệ báo nhầm, thấp là tốt)</small></> : r.attack}
+                {r.attack !== "BENIGN" && !trained.has(r.attack) && <span className="badge warn">chưa client nào học</span>}
+              </td>
+              <td>{r.day === "test_day" ? <span className="badge">ngày khác</span> : "cùng ngày"}</td>
+              <td className="num">{r.n.toLocaleString("vi-VN")}</td>
+              {cell(r, r.fl)}{cell(r, r.best)}{cell(r, r.worst)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Note>Với tấn công: tỉ lệ flow bị phát hiện (càng cao càng tốt). “Ngày khác” = lưu lượng từ ngày ghi thứ hai, mô hình chưa từng thấy ngày này.
+        {!locals.length && " Chạy baseline cục bộ trên dữ liệu v2 để có hai cột so sánh."}</Note>
+    </>
+  );
+}

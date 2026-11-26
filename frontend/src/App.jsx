@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { MODEL_LABEL, fmt, get, post } from "./api.js";
 import Topology from "./Topology.jsx";
 import { Info } from "./Info.jsx";
-import { CommCost, CompareTable, ConfusionMatrix, Convergence, DetectionChart, F1Chart, METRIC_NAME, MetricSwitch, PerClient, RunsTab, STATUS_VI, TrafficTable } from "./Panels.jsx";
+import { CommCost, CompareTable, ConfusionMatrix, Convergence, DetectionChart, F1Chart, METRIC_NAME, MetricSwitch, PerAttackTable, PerClient, RunsTab, STATUS_VI, TrafficTable } from "./Panels.jsx";
 import { PHASES, useRoundPlayer } from "./useRoundPlayer.js";
 import "./styles.css";
 
@@ -87,6 +87,7 @@ export default function App() {
           {page === "flow" && <FlowView key={run?.id ?? "none"} {...ctx} />}
           {page === "quality" && (
             <>
+              <Card title="Tỉ lệ phát hiện theo từng loại tấn công" info="perAttack"><PerAttackTable run={run} localRun={localRun} clients={clients} /></Card>
               <Card title="Precision, Recall và tỉ lệ báo động nhầm theo vòng" info="fpr"><DetectionChart run={run} /></Card>
               <Card title="F1 và loss toàn cục theo từng vòng" info="loss"><Convergence run={run} /></Card>
               {compareCard}
@@ -200,13 +201,13 @@ function FlowView({ run, clients, bestLocal }) {
 function ClientsTable({ clients, localRun }) {
   return (
     <table>
-      <thead><tr><th>Client</th><th>Loại tấn công</th><th>Mô hình</th><th className="num">Số mẫu train <Info k="samples" /></th><th className="num">F1 cục bộ, test riêng <Info k="ownTest" /></th><th className="num">F1 cục bộ, test chung <Info k="globalTest" /></th></tr></thead>
+      <thead><tr><th>Client</th><th>Đơn vị</th><th>Loại tấn công</th><th>Mô hình</th><th className="num">Số mẫu train <Info k="samples" /></th><th className="num">F1 cục bộ, test riêng <Info k="ownTest" /></th><th className="num">F1 cục bộ, test chung <Info k="globalTest" /></th></tr></thead>
       <tbody>
         {clients.map((c) => {
           const m = localRun?.local_metrics?.[c.name];
           return (
             <tr key={c.id}>
-              <td>{c.name}</td><td>{c.attack}</td><td>{c.model}</td>
+              <td>{c.name}</td><td>{c.label ?? "–"}</td><td>{(c.attacks ?? [c.attack]).join(", ")}</td><td>{c.model}</td>
               <td className="num">{c.train_samples?.toLocaleString() ?? "–"}</td>
               <td className="num">{fmt(m?.local_test_f1)}</td><td className="num">{fmt(m?.global_test_f1)}</td>
             </tr>

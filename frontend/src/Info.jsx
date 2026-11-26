@@ -16,6 +16,7 @@ export const GLOSSARY = {
   recall: "Recall (tỉ lệ phát hiện) = TP / (TP + FN): trong mọi cuộc tấn công thật, mô hình bắt được bao nhiêu phần. Recall thấp = bỏ sót tấn công.",
   fpr: "Tỉ lệ báo động nhầm (false-positive rate) = FP / (FP + TN): phần lưu lượng bình thường bị báo là tấn công. Càng thấp càng tốt. Với IDS đây là con số quan trọng: 1% của một triệu flow mỗi ngày là 10.000 cảnh báo nhầm.",
   confusion: "Ma trận nhầm lẫn: mỗi flow trong tập kiểm thử rơi vào một ô. TP = tấn công bị bắt, FN = tấn công bị bỏ sót, FP = lưu lượng bình thường bị báo nhầm, TN = lưu lượng bình thường được bỏ qua đúng. Precision, Recall, F1 và tỉ lệ báo động nhầm đều tính từ 4 ô này.",
+  perAttack: "Tỉ lệ phát hiện theo loại tấn công: trong tập test chung, mỗi loại tấn công có bao nhiêu phần trăm flow bị mô hình báo là tấn công. Dòng “Bình thường” là tỉ lệ báo động nhầm. So sánh mô hình liên kết với mô hình cục bộ tốt nhất và kém nhất cho thấy loại tấn công nào chỉ được phát hiện nhờ học liên kết. Nhãn “chưa client nào học” đánh dấu loại tấn công không client nào có trong dữ liệu train.",
   bytes: "Dung lượng trọng số mô hình trao đổi trong vòng: ↓ server gửi xuống client, ↑ client gửi lên server. Chỉ có trọng số, không có dữ liệu lưu lượng thô.",
   valF1: "F1 trên tập validation riêng của từng client, đo ngay sau khi client nhận mô hình toàn cục của vòng đó.",
   trainLoss: "Loss trung bình khi client huấn luyện cục bộ trong vòng đó.",

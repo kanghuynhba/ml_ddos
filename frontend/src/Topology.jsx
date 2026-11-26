@@ -38,8 +38,8 @@ export default function Topology({ run, clients, shown, phase }) {
         return (
           <div key={c.id} style={{ left: `${xs[i]}%`, top: `${CLIENT_Y}%`, width }}
             className={`node client ${phase === "training" ? "train" : ""} ${phase === "uploading" ? "done" : ""}`}>
-            <div className="node-kicker">client {c.id} <span className="tag">{c.attack}</span></div>
-            <div className="node-title">{ATTACK[c.attack] ?? c.attack}</div>
+            <div className="node-kicker">client {c.id} {(c.attacks ?? [c.attack]).map((a) => <span key={a} className="tag">{a}</span>)}</div>
+            <div className="node-title">{c.label ?? ATTACK[c.attack] ?? c.attack}</div>
             <div className="node-stats">
               <span>{share != null ? `${share}× dữ liệu` : "–"} · {c.model}</span>
               <span>F1 <b className="mono">{fmt(r?.val_f1)}</b></span>
