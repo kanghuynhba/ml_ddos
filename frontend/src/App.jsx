@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { MODEL_LABEL, fmt, get, post } from "./api.js";
 import Topology from "./Topology.jsx";
 import { Info } from "./Info.jsx";
-import { CommCost, CompareTable, Convergence, F1Chart, PerClient, RunsTab, STATUS_VI, TrafficTable } from "./Panels.jsx";
+import { CommCost, CompareTable, ConfusionMatrix, Convergence, DetectionChart, F1Chart, METRIC_NAME, MetricSwitch, PerClient, RunsTab, STATUS_VI, TrafficTable } from "./Panels.jsx";
 import { PHASES, useRoundPlayer } from "./useRoundPlayer.js";
 import "./styles.css";
 
@@ -22,6 +22,7 @@ export default function App() {
   const [selId, setSelId] = useState(null);
   const [page, setPage] = useState("overview");
   const [compare, setCompare] = useState(null);
+  const [metric, setMetric] = useState("f1");
   const [newRun, setNewRun] = useState(false);
   const [err, setErr] = useState("");
 
@@ -37,11 +38,17 @@ export default function App() {
 
   useEffect(() => {
     if (!run?.history || !localRun) return setCompare(null);
-    get(`/compare?fl=${run.id}&local=${localRun.id}`).then(setCompare).catch(() => setCompare(null));
-  }, [run?.id, run?.status, localRun?.id]);
+    get(`/compare?fl=${run.id}&local=${localRun.id}&metric=${metric}`).then(setCompare).catch(() => setCompare(null));
+  }, [run?.id, run?.status, localRun?.id, metric]);
 
   const title = PAGES.find((p) => p[0] === page)[2];
-  const ctx = { run, runs, localRun, clients, bestLocal, compare };
+  const ctx = { run, runs, localRun, clients, bestLocal, compare, metric, setMetric };
+  const compareCard = (
+    <Card title={`So sánh cục bộ và liên kết: ${METRIC_NAME[metric]} theo tập kiểm thử`} info="compare"
+      actions={<MetricSwitch value={metric} onChange={setMetric} />}>
+      <CompareTable compare={compare} clients={clients} run={run} localRun={localRun} metric={metric} />
+    </Card>
+  );
 
   return (
     <div className="shell">
@@ -76,12 +83,13 @@ export default function App() {
 
           {err && <div className="msgbar error">{err}</div>}
 
-          {page === "overview" && <Overview {...ctx} />}
+          {page === "overview" && <Overview {...ctx} compareCard={compareCard} />}
           {page === "flow" && <FlowView key={run?.id ?? "none"} {...ctx} />}
           {page === "quality" && (
             <>
+              <Card title="Precision, Recall và tỉ lệ báo động nhầm theo vòng" info="fpr"><DetectionChart run={run} /></Card>
               <Card title="F1 và loss toàn cục theo từng vòng" info="loss"><Convergence run={run} /></Card>
-              <Card title="So sánh cục bộ và liên kết: F1 theo tập kiểm thử" info="compare"><CompareTable compare={compare} clients={clients} run={run} localRun={localRun} /></Card>
+              {compareCard}
             </>
           )}
           {page === "clients" && (
@@ -120,10 +128,12 @@ export const strategyLabel = (c) =>
 
 const Status = ({ s }) => <span className={`status ${s}`}><i />{STATUS_VI[s] ?? s}</span>;
 
-function Overview({ run, localRun, clients, bestLocal, compare }) {
+function Overview({ run, localRun, clients, bestLocal, compareCard }) {
   const h = run?.history, c = run?.config;
   const f1 = h?.global_f1.at(-1), prev = h?.global_f1.at(-2);
   const gain = f1 != null && bestLocal != null ? f1 - bestLocal : null;
+  const gm = run?.final?.metrics?.at(-1); // shared test, full confusion counts
+  const fpr = gm?.fpr ?? h?.global_fpr?.at(-1);
   const signed = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`;
   return (
     <>
@@ -145,15 +155,16 @@ function Overview({ run, localRun, clients, bestLocal, compare }) {
         <Kpi label="Mô hình cục bộ tốt nhất" info="bestLocal" value={fmt(bestLocal)} sub={bestLocal == null ? "hãy chạy baseline cục bộ" : "F1 trên tập kiểm thử chung"} />
         <Kpi label="FedAvg so với cục bộ tốt nhất" info="gain" value={gain == null ? "–" : signed(gain)} tone={gain == null ? "" : gain >= 0 ? "good" : "bad"}
           sub={gain == null ? null : gain >= 0 ? "mô hình liên kết tốt hơn" : "mô hình cục bộ vẫn tốt hơn"} />
+        <Kpi label="Tỉ lệ báo động nhầm" info="fpr" value={fpr == null ? "–" : `${(fpr * 100).toFixed(2)}%`}
+          sub={gm ? `${gm.fp.toLocaleString("vi-VN")} / ${(gm.fp + gm.tn).toLocaleString("vi-VN")} flow bình thường bị báo nhầm` : fpr != null ? "trên tập kiểm thử chung" : run?.config.kind === "fl" ? "lượt chạy cũ, chưa có số liệu" : null} />
         <Kpi label="Số vòng đã hoàn thành" info="round" value={h ? `${h.round.at(-1)} / ${c.rounds}` : "–"} sub={run?.status === "running" ? "đang huấn luyện" : null} />
       </div>
 
       <div className="grid-2">
-        <Card title="F1 toàn cục theo từng vòng" info="f1"><F1Chart run={run} bestLocal={bestLocal} /></Card>
-        <Card title="So sánh cục bộ và liên kết: F1 theo tập kiểm thử" info="compare">
-          <CompareTable compare={compare} clients={clients} run={run} localRun={localRun} />
-        </Card>
+        <Card title="F1 toàn cục theo từng vòng" info="f1"><F1Chart run={run} bestLocal={bestLocal} height={300} /></Card>
+        <Card title="Ma trận nhầm lẫn của mô hình liên kết" info="confusion"><ConfusionMatrix key={run?.id} run={run} clients={clients} /></Card>
       </div>
+      {compareCard}
     </>
   );
 }

@@ -95,7 +95,24 @@ export function TrafficTable({ clients, shown }) {
   );
 }
 
-export function CompareTable({ compare, clients, run, localRun }) {
+export const METRICS = [["f1", "F1"], ["precision", "Precision"], ["recall", "Recall"], ["fpr", "Báo động nhầm"]];
+export const METRIC_NAME = Object.fromEntries(METRICS);
+const pct = (v, d = 2) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
+const fmtMetric = (metric, v) => (metric === "fpr" ? pct(v) : fmt(v, 2));
+
+// segmented control to pick which detection metric a table shows
+export function MetricSwitch({ value, onChange }) {
+  return (
+    <div className="seg" role="group" aria-label="Chọn độ đo">
+      {METRICS.map(([k, label]) => (
+        <button key={k} className={k === value ? "on" : ""} aria-pressed={k === value} onClick={() => onChange(k)}>{label}</button>
+      ))}
+      <Info k={value} />
+    </div>
+  );
+}
+
+export function CompareTable({ compare, clients, run, localRun, metric = "f1" }) {
   const cols = compare?.columns ?? [...clients.map((c) => `${c.name}_test`), "global_test"];
   // without GET /compare we only know each local model's own test + global test, and FedAvg's global test
   const rows = compare?.rows ?? [
@@ -122,13 +139,16 @@ export function CompareTable({ compare, clients, run, localRun }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.model} className={r.model === "fedavg" ? "hl" : ""}>
-              <td>{rowLabel(r.model)}</td>{r.f1.map((v, i) => <td key={i} className="num">{fmt(v, 2)}</td>)}
+              <td>{rowLabel(r.model)}</td>{(r.values ?? (metric === "f1" ? r.f1 : r.f1.map(() => null))).map((v, i) => <td key={i} className="num">{fmtMetric(metric, v)}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
       {!localRun && <Note>Hãy chạy baseline cục bộ để điền các hàng so sánh.</Note>}
       {!compare && rows.length > 0 && <Note>Ô “–” cần API GET /compare (đang trong kế hoạch).</Note>}
+      {compare && metric !== "f1" && compare.rows.some((r) => r.values?.some((v) => v == null)) &&
+        <Note>Ô “–”: lượt chạy được tạo trước khi có số liệu chi tiết. Chạy lại để có {METRIC_NAME[metric]}.</Note>}
+      {metric === "fpr" && <Note>Với tỉ lệ báo động nhầm, <b>càng thấp càng tốt</b>.</Note>}
       <Note>Mỗi mô hình cục bộ tốt trên loại tấn công của chính nó và yếu với các loại khác. Mô hình liên kết cần tốt trên tất cả.</Note>
     </>
   );
@@ -209,5 +229,75 @@ export function RunsTab({ runs, selId, onSelect }) {
       </table>
       {log && <><div className="card-title" style={{ marginTop: 14 }}>Log · {log.id}</div><pre className="log">{log.text}</pre></>}
     </>
+  );
+}
+
+// 2x2 confusion matrix of the federated model on one test set (attack = positive)
+export function ConfusionMatrix({ run, clients }) {
+  const cols = run?.final?.columns ?? [];
+  const [col, setCol] = useState(Math.max(0, cols.length - 1));
+  if (run?.config.kind !== "fl") return <Note>Chọn một lượt chạy học liên kết (FL).</Note>;
+  const ms = run.final?.metrics;
+  if (!ms) return <Note>{run.status === "running" ? "Ma trận có sau vòng cuối cùng." : "Lượt chạy này được tạo trước khi có số liệu chi tiết. Hãy chạy lại để xem ma trận nhầm lẫn."}</Note>;
+  const m = ms[col] ?? ms.at(-1);
+  const n = (v) => v.toLocaleString("vi-VN");
+  const share = (a, b) => (b ? `${((100 * a) / b).toFixed((100 * a) / b < 1 ? 2 : 1)}%` : "–");
+  const label = (c) => {
+    const cl = clients.find((x) => `${x.name}_test` === c);
+    return c === "global_test" ? "Test chung (mọi loại tấn công)" : cl ? `Test client ${cl.id} (${cl.attack})` : c;
+  };
+  const attacks = m.tp + m.fn, benign = m.fp + m.tn;
+  return (
+    <>
+      <label className="cmd-select" style={{ marginBottom: 12 }}>Tập kiểm thử
+        <select value={col} onChange={(e) => setCol(Number(e.target.value))}>
+          {cols.map((c, i) => <option key={c} value={i}>{label(c)}</option>)}
+        </select>
+      </label>
+      <table className="cm">
+        <thead><tr><th /><th>Mô hình nói: <b>tấn công</b></th><th>Mô hình nói: <b>bình thường</b></th></tr></thead>
+        <tbody>
+          <tr>
+            <th>Thật sự là tấn công <small>{n(attacks)} flow</small></th>
+            <td className="ok"><span>TP · bắt được</span><b>{n(m.tp)}</b><small>{share(m.tp, attacks)} số tấn công</small></td>
+            <td className="miss"><span>FN · bỏ sót</span><b>{n(m.fn)}</b><small>{share(m.fn, attacks)} số tấn công</small></td>
+          </tr>
+          <tr>
+            <th>Thật sự bình thường <small>{n(benign)} flow</small></th>
+            <td className="miss"><span>FP · báo động nhầm</span><b>{n(m.fp)}</b><small>{share(m.fp, benign)} lưu lượng bình thường</small></td>
+            <td className="ok"><span>TN · đúng, im lặng</span><b>{n(m.tn)}</b><small>{share(m.tn, benign)} lưu lượng bình thường</small></td>
+          </tr>
+        </tbody>
+      </table>
+      <div className="cm-rates">
+        <span>Precision <Info k="precision" /> <b>{fmt(m.precision)}</b></span>
+        <span>Recall <Info k="recall" /> <b>{fmt(m.recall)}</b></span>
+        <span>F1 <Info k="f1" /> <b>{fmt(m.f1)}</b></span>
+        <span>Tỉ lệ báo động nhầm <Info k="fpr" /> <b>{pct(m.fpr)}</b></span>
+      </div>
+    </>
+  );
+}
+
+// precision / recall (left axis) and false-alarm rate (right axis, %) of the global model per round
+export function DetectionChart({ run }) {
+  const h = run?.history;
+  if (!h?.global_precision?.length) return <Note>{run?.config.kind === "fl" ? "Lượt chạy này được tạo trước khi có precision/recall theo vòng. Hãy chạy lại." : "Chọn một lượt chạy học liên kết (FL)."}</Note>;
+  const data = h.round.map((r, i) => ({ round: r, precision: h.global_precision[i], recall: h.global_recall[i], fpr: h.global_fpr[i] * 100 }));
+  const rounds = data.at(-1).round;
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <CartesianGrid {...GRID} />
+        <XAxis dataKey="round" type="number" domain={[0, rounds]} ticks={roundTicks(rounds)} {...AXIS} />
+        <YAxis yAxisId="r" domain={[0, 1]} tickFormatter={(v) => v.toFixed(2)} width={44} {...AXIS} />
+        <YAxis yAxisId="f" orientation="right" tickFormatter={(v) => `${v.toFixed(0)}%`} width={44} {...AXIS} />
+        <Tooltip formatter={(v, name) => (name.startsWith("Tỉ lệ") ? `${v.toFixed(2)}%` : fmt(v))} labelFormatter={roundLabel} {...TIP} />
+        <Legend />
+        <Line yAxisId="r" dataKey="precision" name="Precision" stroke="#0078d4" dot={false} isAnimationActive={false} />
+        <Line yAxisId="r" dataKey="recall" name="Recall (tỉ lệ phát hiện)" stroke="#107c10" dot={false} isAnimationActive={false} />
+        <Line yAxisId="f" dataKey="fpr" name="Tỉ lệ báo động nhầm (trục phải)" stroke="#d13438" strokeDasharray="5 3" dot={false} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }

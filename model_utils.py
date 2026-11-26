@@ -102,8 +102,29 @@ def train_epochs(
     return last_loss
 
 
+def detection_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    """Confusion counts (attack = positive) and the rates an IDS cares about. fpr = false-alarm rate on benign traffic."""
+    y_true, y_pred = np.asarray(y_true).astype(int), np.asarray(y_pred).astype(int)
+    tp = int(((y_pred == 1) & (y_true == 1)).sum())
+    fp = int(((y_pred == 1) & (y_true == 0)).sum())
+    fn = int(((y_pred == 0) & (y_true == 1)).sum())
+    tn = int(((y_pred == 0) & (y_true == 0)).sum())
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    return {
+        "tp": tp, "fp": fp, "fn": fn, "tn": tn, "precision": precision, "recall": recall,
+        "f1": 2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+        "fpr": fp / (fp + tn) if fp + tn else 0.0,
+    }
+
+
+def rounded(m: dict, nd: int = 4) -> dict:
+    return {k: round(v, nd) if isinstance(v, float) else v for k, v in m.items()}
+
+
 @torch.no_grad()
-def evaluate_model(model: nn.Module, loader: DataLoader) -> tuple[float, float]:
+def evaluate_detailed(model: nn.Module, loader: DataLoader) -> tuple[float, dict]:
+    """Mean BCE loss and detection_metrics() at the 0.5 threshold."""
     criterion = nn.BCEWithLogitsLoss()
     model.eval()
     total_loss, count = 0.0, 0
@@ -116,6 +137,9 @@ def evaluate_model(model: nn.Module, loader: DataLoader) -> tuple[float, float]:
         preds = (torch.sigmoid(logits) >= 0.5).float()
         all_preds.append(preds.numpy())
         all_targets.append(y_batch.numpy())
-    y_pred = np.concatenate(all_preds)
-    y_true = np.concatenate(all_targets)
-    return total_loss / max(count, 1), float(f1_score(y_true, y_pred, zero_division=0))
+    return total_loss / max(count, 1), detection_metrics(np.concatenate(all_targets), np.concatenate(all_preds))
+
+
+def evaluate_model(model: nn.Module, loader: DataLoader) -> tuple[float, float]:
+    loss, m = evaluate_detailed(model, loader)
+    return loss, m["f1"]
