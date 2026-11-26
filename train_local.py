@@ -4,7 +4,7 @@ import os
 import joblib
 import torch
 from sklearn.ensemble import RandomForestClassifier
-from model_utils import DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, build_model, detection_metrics, evaluate_detailed, load_parquet_loader, load_xy, rounded, train_epochs
+from model_utils import DATA_DIR, NUM_CLIENTS, TEST_COLUMNS, build_model, detection_metrics, evaluate_detailed, load_parquet_loader, load_xy, per_attack_recall, predict, rounded, train_epochs
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="results")
@@ -19,7 +19,8 @@ OUT = ARGS.out
 os.makedirs(OUT, exist_ok=True)
 if ARGS.seed is not None:
     torch.manual_seed(ARGS.seed)
-global_test_loader, input_dim = load_parquet_loader(f"{DATA_DIR}/global_test.parquet", batch_size=256)
+GLOBAL_PATH = f"{DATA_DIR}/global_test.parquet"
+global_test_loader, input_dim = load_parquet_loader(GLOBAL_PATH, batch_size=256)
 
 test_loaders = [load_parquet_loader(f"{DATA_DIR}/client_{i}_test.parquet", batch_size=256)[0] for i in range(NUM_CLIENTS)]
 local_results = {}
@@ -33,7 +34,8 @@ def run_rf(cid: int) -> dict:
     paths = [f"{DATA_DIR}/client_{i}_test.parquet" for i in range(NUM_CLIENTS)] + [f"{DATA_DIR}/global_test.parquet"]
     ms = [rounded(detection_metrics(yt, rf.predict(Xt))) for Xt, yt in map(load_xy, paths)]
     return {"local_test_f1": ms[cid]["f1"], "global_test_f1": ms[-1]["f1"], "global_test_loss": None,
-            "test_f1": [m["f1"] for m in ms], "test_metrics": ms}
+            "test_f1": [m["f1"] for m in ms], "test_metrics": ms,
+            "per_attack": per_attack_recall(rf.predict(load_xy(paths[-1])[0]), paths[-1])}
 
 
 for cid in range(NUM_CLIENTS):
@@ -58,6 +60,7 @@ for cid in range(NUM_CLIENTS):
         "global_test_loss": round(global_loss, 4),
         "test_f1": [m["f1"] for m in ms],
         "test_metrics": ms,
+        "per_attack": per_attack_recall(predict(model, GLOBAL_PATH), GLOBAL_PATH),
     }
     print(
         f"Client {cid} Local-Only -> Local Test F1: {local_f1:.4f} | "

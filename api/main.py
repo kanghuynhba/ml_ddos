@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from config import load_clients
+from config import load_clients, load_manifest
 
 RUNS = Path(os.environ.get("RUNS_DIR", "/app/runs"))
 RUNS.mkdir(parents=True, exist_ok=True)
@@ -132,6 +132,16 @@ def compare(fl: str, local: str, metric: str = "f1"):
 def clients():
     import pyarrow.parquet as pq
     data = Path(os.environ.get("DATA_DIR", "/data"))
-    return [{"id": i, "name": f"client_{i}", "attack": c["attack"], "model": "MLP",
+    return [{"id": i, "name": f"client_{i}", "attack": c["attack"], "attacks": c.get("attacks", [c["attack"]]),
+             "label": c.get("label"), "model": "MLP",
              "train_samples": pq.ParquetFile(data / f"client_{i}_train.parquet").metadata.num_rows}
             for i, c in enumerate(load_clients())]
+
+
+@app.get("/dataset")
+def dataset():
+    """The prepared dataset's manifest (v2 data): version, clients, test-set sizes, attacks no client trains on."""
+    m = load_manifest()
+    if not m:
+        raise HTTPException(404, "no manifest: DATA_DIR holds v1 data")
+    return m

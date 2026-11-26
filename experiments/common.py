@@ -1,12 +1,14 @@
 """Helpers shared by the experiment scripts: talk to the backend API and run jobs a few at a time."""
 import json
+import os
 import statistics
 import sys
 import time
 import urllib.request
 
 API = sys.argv[1] if len(sys.argv) > 1 else "http://khang-linux:8000"
-PARALLEL = 3
+# runs started at once; each FL run uses ~1 GB per client, so use 1 with 6+ clients on a 12 GB machine
+PARALLEL = int(os.environ.get("EXP_PARALLEL", "3"))
 
 
 def call(path, body=None):

@@ -1,13 +1,15 @@
 import { fmt } from "./api.js";
 
 const ATTACK = { SYN: "SYN flood", DNS: "DNS DrDoS", UDP: "UDP DrDoS" };
-const SERVER_Y = 17, CLIENT_Y = 74; // % of panel height, node centres
+const SERVER_Y = 17; // % of panel height, node centres
 
 export const clientLabel = (c) => `Client ${c.id} · ${ATTACK[c.attack] ?? c.attack}`;
 export const Bar = ({ v }) => <div className="bar"><i style={{ width: `${(v ?? 0) * 100}%` }} /></div>;
 
 export default function Topology({ run, clients, shown, phase }) {
   const xs = clients.map((_, i) => ((i + 0.5) / clients.length) * 100);
+  const compact = clients.length > 4; // smaller cards in a taller panel so 5+ clients fit side by side
+  const CLIENT_Y = compact ? 68 : 74;
   const total = run?.config.rounds ?? 0;
   const idx = run?.history?.round.indexOf(shown) ?? -1;
   const minSamples = Math.min(...clients.map((c) => c.train_samples || Infinity));
@@ -15,7 +17,7 @@ export default function Topology({ run, clients, shown, phase }) {
   const width = `min(170px, calc(${100 / clients.length}% - 16px))`;
 
   return (
-    <div className="topo">
+    <div className={`topo ${compact ? "compact" : ""}`}>
       <svg className="lines" viewBox="0 0 100 100" preserveAspectRatio="none">
         {xs.map((x) => (
           <line key={x} x1="50" y1={SERVER_Y + 8} x2={x} y2={CLIENT_Y - 10} className={flying ? `flow-${flying}` : ""} />
@@ -38,8 +40,8 @@ export default function Topology({ run, clients, shown, phase }) {
         return (
           <div key={c.id} style={{ left: `${xs[i]}%`, top: `${CLIENT_Y}%`, width }}
             className={`node client ${phase === "training" ? "train" : ""} ${phase === "uploading" ? "done" : ""}`}>
-            <div className="node-kicker">client {c.id} <span className="tag">{c.attack}</span></div>
-            <div className="node-title">{ATTACK[c.attack] ?? c.attack}</div>
+            <div className="node-kicker">client {c.id} {(c.attacks ?? [c.attack]).map((a) => <span key={a} className="tag">{a}</span>)}</div>
+            <div className="node-title">{c.label ?? ATTACK[c.attack] ?? c.attack}</div>
             <div className="node-stats">
               <span>{share != null ? `${share}× dữ liệu` : "–"} · {c.model}</span>
               <span>F1 <b className="mono">{fmt(r?.val_f1)}</b></span>
